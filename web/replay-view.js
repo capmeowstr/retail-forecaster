@@ -3,7 +3,7 @@
 function createReplayView({ dateRange, formatDate, formatNumber, displayName }) {
   const ui = Object.fromEntries([
     "controls", "opening", "lead", "pack", "group", "period", "model", "rows", "status", "export", "credit",
-    "summary", "impact", "impact-note", "impact-rows", "policy", "policy-note",
+    "summary", "impact", "impact-note", "impact-rows", "policy", "policy-note", "visuals",
   ].map(id => [id, document.getElementById("replay-" + id)]));
   const sources = { demo: "Synthetic sales", retail: "UCI Online Retail · UK sales", upload: "Uploaded sales" };
   const metrics = [
@@ -20,6 +20,8 @@ function createReplayView({ dateRange, formatDate, formatNumber, displayName }) 
   function hideResultDetails() {
     ui.summary.hidden = true;
     ui.summary.textContent = "";
+    ui.visuals.hidden = true;
+    ui.visuals.replaceChildren();
     ui.impact.hidden = true;
     ui["impact-rows"].replaceChildren();
     ui["impact-note"].textContent = "";
@@ -82,6 +84,46 @@ function createReplayView({ dateRange, formatDate, formatNumber, displayName }) 
         " units. Comparing spend requires actual purchase costs.";
   }
 
+  function renderComparison() {
+    const quantities = [
+      ["Units missed", "missed"],
+      ["Units ordered", "orderedUnits"],
+      ["Ending stock", "endingStock"],
+    ];
+    const graphics = document.createDocumentFragment();
+    for (const [label, key] of quantities) {
+      const graphic = document.createElement("div");
+      graphic.className = "replay-graphic";
+      graphic.dataset.metric = key;
+      const heading = document.createElement("h3");
+      heading.textContent = label;
+      graphic.append(heading);
+      const peak = Math.max(replay.selected[key], replay.baseline[key], 1);
+      for (const [plan, name] of [["selected", "Selected"], ["baseline", "Weekly"]]) {
+        const value = replay[plan][key];
+        const row = document.createElement("div");
+        row.className = "comparison-row";
+        row.dataset.plan = plan;
+        const label = document.createElement("span");
+        label.textContent = name;
+        const track = document.createElement("div");
+        track.className = "comparison-track";
+        track.setAttribute("aria-hidden", "true");
+        const fill = document.createElement("i");
+        fill.style.width = (value / peak) * 100 + "%";
+        track.append(fill);
+        const total = document.createElement("span");
+        total.className = "comparison-total";
+        total.textContent = formatNumber(value);
+        row.append(label, track, total);
+        graphic.append(row);
+      }
+      graphics.append(graphic);
+    }
+    ui.visuals.replaceChildren(graphics);
+    ui.visuals.hidden = false;
+  }
+
   function renderImpact() {
     const items = replay.rows
       .map(({ id, selected, baseline }) => ({
@@ -98,7 +140,9 @@ function createReplayView({ dateRange, formatDate, formatNumber, displayName }) 
     ui["impact-rows"].replaceChildren();
     ui["impact-note"].textContent = "Selected plan minus weekly baseline. Showing " +
       formatNumber(Math.min(limit, items.length)) + " of " + formatNumber(items.length) + " items with changes.";
-    for (const item of items.slice(0, limit)) {
+    const visible = items.slice(0, limit);
+    const peak = Math.max(1, ...visible.map(item => Math.abs(item.missed)));
+    for (const item of visible) {
       const row = ui["impact-rows"].insertRow();
       const heading = document.createElement("th");
       heading.scope = "row";
@@ -107,6 +151,15 @@ function createReplayView({ dateRange, formatDate, formatNumber, displayName }) 
       const missed = row.insertCell();
       missed.textContent = differenceText(item.missed, "missed");
       if (Math.abs(item.missed) >= 0.005) missed.dataset.change = item.missed < 0 ? "better" : "worse";
+      const track = document.createElement("div");
+      track.className = "impact-track";
+      track.setAttribute("aria-hidden", "true");
+      const fill = document.createElement("i");
+      const width = Math.abs(item.missed) / peak * 50;
+      fill.style.width = width + "%";
+      fill.style.left = (item.missed < 0 ? 50 - width : 50) + "%";
+      track.append(fill);
+      missed.append(track);
       row.insertCell().textContent = differenceText(item.ordered, "orderedUnits");
       row.insertCell().textContent = differenceText(item.ending, "endingStock");
     }
@@ -132,6 +185,7 @@ function createReplayView({ dateRange, formatDate, formatNumber, displayName }) 
       return;
     }
     renderSummary();
+    renderComparison();
     renderImpact();
     ui.rows.replaceChildren();
     for (const [label, key, direction] of metrics) {

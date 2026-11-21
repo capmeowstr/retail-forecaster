@@ -46,10 +46,12 @@ const dateValue = day => Date.parse(day + "T00:00:00Z");
 const percent = value => value === null ? "N/A" : percents.format(value);
 const displayName = model => modelNames[model] ?? model;
 const formatDate = day => fullDate.format(dateValue(day));
-const dateRange = (first, last) => shortDate.format(dateValue(first)) + " – " + formatDate(last);
+const formatShortDate = day => shortDate.format(dateValue(day));
+const dateRange = (first, last) => formatShortDate(first) + " – " + formatDate(last);
 const replayView = createReplayView({ dateRange, formatDate, formatNumber: numbers.format, displayName });
 const reorderView = createReorderView({
   formatDate,
+  formatShortDate,
   formatNumber: numbers.format,
   unitsText,
   onSelect: id => {
@@ -60,6 +62,20 @@ const reorderView = createReorderView({
     renderSeries();
   },
 });
+
+const navLinks = document.querySelectorAll(".desk-nav a");
+function updateNavigation() {
+  const section = window.location.hash || "#reorder-board";
+  for (const link of navLinks) {
+    if (link.hash === section || (section === "#top" && link.hash === "#reorder-board")) {
+      link.setAttribute("aria-current", "location");
+    } else {
+      link.removeAttribute("aria-current");
+    }
+  }
+}
+window.addEventListener("hashchange", updateNavigation);
+updateNavigation();
 
 function addRow(body, values) {
   const row = body.insertRow();
@@ -240,7 +256,7 @@ function drawChart() {
   context.lineJoin = "round";
 
   if (!result) {
-    context.fillStyle = "#58685e";
+    context.fillStyle = "#586669";
     context.textAlign = "center";
     context.fillText(request ? "Reading sales history…" : "Forecast chart", width / 2, height / 2);
     return;
@@ -264,51 +280,51 @@ function drawChart() {
   const startDay = dateValue(result.cutoff) - (firstFuture - 1) * dayMs;
   chartFrame = { left, right, values };
 
-  context.fillStyle = "#edf2e8";
+  context.fillStyle = "#e7f3ee";
   context.fillRect(boundary, top, right - boundary, bottom - top);
   context.lineWidth = 1;
   context.textAlign = "right";
   for (let tick = 0; tick <= 4; tick++) {
     const value = tick * step;
     const line = y(value);
-    context.strokeStyle = "#e0e2d9";
+    context.strokeStyle = "#dfe6e3";
     context.beginPath();
     context.moveTo(left, line);
     context.lineTo(right, line);
     context.stroke();
-    context.fillStyle = "#58685e";
+    context.fillStyle = "#586669";
     context.fillText(numbers.format(value), left - 7, line);
   }
   context.beginPath();
-  context.strokeStyle = "#9cae9b";
+  context.strokeStyle = "#a2bdb5";
   context.moveTo(boundary, top);
   context.lineTo(boundary, bottom);
   context.stroke();
 
-  context.fillStyle = "#58685e";
+  context.fillStyle = "#586669";
   const ticks = width < 420 ? [0, firstFuture - 1, values.length - 1] :
     [0, Math.floor((firstFuture - 1) / 2), firstFuture - 1, values.length - 1];
   for (const index of new Set(ticks)) {
     context.textAlign = index === 0 ? "left" : index === values.length - 1 ? "right" : "center";
     context.fillText(shortDate.format(startDay + index * dayMs), x(index), bottom + 15);
   }
-  strokeSeries(context, item.history, x, y, 0, "#58685e");
+  strokeSeries(context, item.history, x, y, 0, "#647782");
   if (item.history.length === 1) {
-    context.fillStyle = "#58685e";
+    context.fillStyle = "#647782";
     context.beginPath();
     context.arc(x(0), y(item.history[0]), 2.5, 0, 2 * Math.PI);
     context.fill();
   }
-  strokeSeries(context, [item.history.at(-1), ...item.forecast], x, y, firstFuture - 1, "#245b47", true);
+  strokeSeries(context, [item.history.at(-1), ...item.forecast], x, y, firstFuture - 1, "#157165", true);
   if (chartIndex !== null) {
     const value = values[chartIndex];
-    context.strokeStyle = "#718775";
+    context.strokeStyle = "#718987";
     context.lineWidth = 1;
     context.beginPath();
     context.moveTo(x(chartIndex), top);
     context.lineTo(x(chartIndex), bottom);
     context.stroke();
-    context.fillStyle = "#245b47";
+    context.fillStyle = "#157165";
     context.beginPath();
     context.arc(x(chartIndex), y(value), 3.5, 0, 2 * Math.PI);
     context.fill();
@@ -332,6 +348,8 @@ async function analyze() {
   }
   const source = file?.name ?? (sourceKind === "retail" ? "UCI Online Retail · UK sales" : "Sample data · Synthetic sales");
   const horizon = ui.horizon.value;
+  ui["demo-button"].setAttribute("aria-pressed", String(sourceKind === "demo"));
+  ui["retail-button"].setAttribute("aria-pressed", String(sourceKind === "retail"));
   clearResult(source, changedSource);
   ui["input-status"].textContent = source;
   ui["run-button"].disabled = true;

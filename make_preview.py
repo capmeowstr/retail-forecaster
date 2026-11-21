@@ -1,6 +1,7 @@
 """Package the dashboard and its offline forecast engine as one HTML file."""
 
 import argparse
+import base64
 import io
 import json
 from pathlib import Path
@@ -12,6 +13,7 @@ from serve import HORIZONS, RETAIL_SAMPLE, WEB, analyze
 SCRIPTS = (
     ("csv.js", "offline-csv"),
     ("forecast-engine.js", "offline-engine"),
+    ("stock-chart.js", "offline-stock-chart"),
     ("reorder.js", "offline-reorder"),
     ("reorder-view.js", "offline-reorder-view"),
     ("replay.js", "offline-replay"),
@@ -34,6 +36,10 @@ def build_preview():
 
     markup = (WEB / "index.html").read_text(encoding="utf-8")
     styles = (WEB / "styles.css").read_text(encoding="utf-8")
+    font = base64.b64encode((WEB / "fonts/instrument-sans.woff2").read_bytes()).decode("ascii")
+    styles = styles.replace("/fonts/instrument-sans.woff2", "data:font/woff2;base64," + font)
+    font_license = (WEB / "fonts/OFL-Instrument-Sans.txt").read_text(encoding="utf-8").strip()
+    styles = "/*\n" + font_license + "\n*/\n" + styles
     scripts = []
     for filename, element_id in SCRIPTS:
         markup = markup.replace(f'  <script defer src="/{filename}"></script>\n', "")
@@ -41,10 +47,6 @@ def build_preview():
         scripts.append(f'<script id="{element_id}">\n{script}\n</script>\n')
     return (
         markup.replace('<link rel="stylesheet" href="/styles.css">', f"<style>{styles}</style>")
-        .replace(
-            "Draft orders from sales forecasts and test them on held-out sales.",
-            "Draft and test orders offline. Sales and inventory files stay in this browser.",
-        )
         .replace(
             "</body>",
             f'<script id="offline-demo-data" type="application/json">{data}</script>\n'

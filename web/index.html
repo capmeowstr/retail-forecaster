@@ -3,10 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f5f3eb">
+  <meta name="theme-color" content="#18262c">
   <title>Retail Forecaster</title>
   <link rel="stylesheet" href="/styles.css">
   <script defer src="/csv.js"></script>
+  <script defer src="/stock-chart.js"></script>
   <script defer src="/reorder.js"></script>
   <script defer src="/reorder-view.js"></script>
   <script defer src="/replay.js"></script>
@@ -14,11 +15,26 @@
   <script defer src="/app.js"></script>
 </head>
 <body>
-  <main class="workspace">
+  <div class="app-shell">
+  <aside class="app-rail">
+    <a class="wordmark" href="#top">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span>Retail<br>Forecaster</span>
+    </a>
+    <nav class="desk-nav" aria-label="Workspace">
+      <a href="#reorder-board" aria-current="location"><span class="nav-icon nav-orders" aria-hidden="true"></span>Reorder</a>
+      <a href="#inventory-replay"><span class="nav-icon nav-replay" aria-hidden="true"></span>Replay</a>
+      <a href="#forecast-evidence"><span class="nav-icon nav-forecast" aria-hidden="true"></span>Forecasts</a>
+    </nav>
+    <p class="rail-note">Files stay on this device</p>
+  </aside>
+  <main class="workspace" id="top">
     <header class="masthead">
-      <h1>Retail Forecaster</h1>
-      <p>Draft orders from sales forecasts and test them on held-out sales.</p>
-      <a class="replay-link" href="#inventory-replay">View inventory replay <span aria-hidden="true">↓</span></a>
+      <div>
+        <h1>Inventory planning</h1>
+        <p>Plan supplier orders from daily sales and opening stock.</p>
+      </div>
+      <a class="replay-link button button-outline" href="#inventory-replay">View inventory replay <span aria-hidden="true">↗</span></a>
     </header>
 
     <noscript><p class="notice" data-kind="error">Enable JavaScript to load the sample or analyze your sales history.</p></noscript>
@@ -106,6 +122,16 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
 
       <div class="reorder-workspace">
         <div class="reorder-list">
+          <section class="risk-calendar" aria-labelledby="risk-calendar-heading" id="reorder-calendar" hidden>
+            <div class="calendar-heading">
+              <div>
+                <h3 id="risk-calendar-heading">Shortage calendar</h3>
+                <p class="subtext" id="reorder-calendar-summary">Items first running short before delivery</p>
+              </div>
+              <button class="button button-text calendar-clear" id="reorder-clear-date" type="button" hidden>Clear date</button>
+            </div>
+            <div class="calendar-days" id="reorder-calendar-days"></div>
+          </section>
           <div class="reorder-controls">
             <label for="reorder-search">
               <span class="field-heading">Find an item</span>
@@ -135,7 +161,7 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
             </label>
           </div>
           <p id="reorder-scenario-impact" class="reorder-scenario-impact" role="status"></p>
-          <div class="table-wrap reorder-table" tabindex="0" role="region" aria-label="Reorder recommendations">
+          <div class="table-wrap reorder-table" id="reorder-items" tabindex="0" role="region" aria-label="Reorder recommendations">
             <table>
               <thead><tr><th scope="col">Item</th><th scope="col">Action</th><th scope="col">Delivery</th><th scope="col">Draft order</th></tr></thead>
               <tbody id="reorder-rows"><tr><td colspan="4" class="empty-cell">Run a forecast to see your items.</td></tr></tbody>
@@ -151,9 +177,27 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
         </div>
 
         <section class="reorder-item" aria-labelledby="reorder-item-heading">
-          <h3 id="reorder-item-heading">Item settings</h3>
-          <p class="subtext" id="reorder-selected">Choose an item to review its order.</p>
+          <div class="item-heading">
+            <div>
+              <h3 id="reorder-item-heading" tabindex="-1">Stock timeline</h3>
+              <p class="subtext" id="reorder-selected">Choose an item to review its order.</p>
+            </div>
+            <span class="plan-status" id="reorder-selected-status" hidden></span>
+          </div>
+          <figure class="stock-figure" aria-labelledby="reorder-item-heading">
+            <div class="stock-legend" id="stock-legend" aria-hidden="true">
+              <span><i></i>With draft</span>
+              <span><i></i>Opening stock only</span>
+              <span><i></i>Short before delivery</span>
+            </div>
+            <canvas id="stock-chart" tabindex="0" role="img" aria-label="Projected stock by day" aria-describedby="stock-caption stock-keyboard" aria-keyshortcuts="ArrowLeft ArrowRight Escape"></canvas>
+            <figcaption id="stock-caption" class="subtext"></figcaption>
+            <p id="stock-keyboard" class="visually-hidden">Use the arrow keys or select a day to read the forecast and stock balances. Press Escape to clear the selection.</p>
+          </figure>
           <div class="reorder-detail" id="reorder-detail" role="status"></div>
+          <button type="button" class="button button-text stock-back" id="reorder-back">Back to items</button>
+          <details class="stock-settings" id="stock-settings">
+          <summary>Item settings</summary>
           <form class="reorder-form" id="reorder-form" aria-label="Selected item settings">
             <div class="reorder-fields">
               <label for="reorder-on-hand">
@@ -175,8 +219,12 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
             </div>
             <button type="submit" class="button button-outline" id="reorder-save" disabled>Save settings</button>
           </form>
-          <p class="subtext reorder-assumptions">The plan assumes delivery is available before sales on its arrival date and no other stock arrives.</p>
-          <p class="subtext reorder-item-evidence" id="reorder-item-evidence"></p>
+          </details>
+          <details class="item-evidence">
+            <summary>Forecast assumptions</summary>
+            <p class="subtext reorder-assumptions">The plan assumes delivery is available before sales on its arrival date and no other stock arrives.</p>
+            <p class="subtext reorder-item-evidence" id="reorder-item-evidence"></p>
+          </details>
         </section>
       </div>
     </section>
@@ -191,6 +239,7 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
         <button type="button" class="button button-outline" id="replay-export" disabled>Download replay CSV</button>
       </div>
       <p id="replay-summary" class="replay-summary" role="status" hidden></p>
+      <div class="replay-visuals" id="replay-visuals" hidden></div>
       <fieldset id="replay-controls" class="replay-controls" disabled>
         <legend class="visually-hidden">Replay settings</legend>
         <label for="replay-opening">
@@ -271,7 +320,7 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
       </details>
     </section>
 
-    <div class="overview">
+    <div class="overview" id="forecast-evidence">
       <section class="panel forecast-panel" aria-labelledby="chart-heading">
         <div class="panel-heading forecast-heading">
           <div>
@@ -369,5 +418,6 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
       </section>
     </div>
   </main>
+  </div>
 </body>
 </html>

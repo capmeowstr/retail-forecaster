@@ -17,7 +17,9 @@ RETAIL_SAMPLE = WEB.parent / "sample-data" / "uci-retail.csv"
 ASSETS = {
     "/": ("index.html", "text/html"),
     "/styles.css": ("styles.css", "text/css"),
+    "/fonts/instrument-sans.woff2": ("fonts/instrument-sans.woff2", "font/woff2"),
     "/csv.js": ("csv.js", "text/javascript"),
+    "/stock-chart.js": ("stock-chart.js", "text/javascript"),
     "/reorder.js": ("reorder.js", "text/javascript"),
     "/reorder-view.js": ("reorder-view.js", "text/javascript"),
     "/replay.js": ("replay.js", "text/javascript"),
@@ -66,7 +68,8 @@ def analyze(source, horizon):
 class DashboardHandler(BaseHTTPRequestHandler):
     def send_data(self, status, kind, data):
         self.send_response(status)
-        self.send_header("Content-Type", f"{kind}; charset=utf-8")
+        content_type = f"{kind}; charset=utf-8" if kind.startswith("text/") or kind == "application/json" else kind
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
