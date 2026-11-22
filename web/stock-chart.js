@@ -14,13 +14,15 @@ function createBalancePlot(canvas, caption, formatShortDate) {
     canvas.width = Math.round(width * scale);
     canvas.height = Math.round(height * scale);
     const ctx = canvas.getContext("2d");
+    const style = getComputedStyle(canvas);
+    const color = name => style.getPropertyValue("--plot-" + name).trim();
     ctx.scale(scale, scale);
     ctx.font = "11px ui-monospace, monospace";
     ctx.textBaseline = "middle";
     plot = null;
     if (!chart?.dates.length) return;
     const { dates, opening, lines, lead, delay = 0, references = [], band, shortages } = chart;
-    const left = 37, right = width - 10, top = 27, bottom = height - 24;
+    const left = 40, right = width - 12, top = 29, bottom = height - 24;
     const step = (right - left) / dates.length;
     const x = i => left + i * step;
     const peak = Math.max(1, opening, ...references.map(ref => ref.value), ...(band?.high ?? []),
@@ -28,69 +30,71 @@ function createBalancePlot(canvas, caption, formatShortDate) {
     const y = units => bottom - units / peak / 1.08 * (bottom - top);
     plot = { left, step };
 
+    function line(x1, y1, x2, y2, ink) {
+      ctx.strokeStyle = ink;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+    for (let index = 0; index <= dates.length; index++) {
+      line(x(index), top, x(index), bottom, color("grid"));
+    }
     if (delay > 0) {
       const start = Math.min(dates.length, lead - delay);
-      ctx.fillStyle = "rgba(181, 71, 8, .1)";
+      ctx.fillStyle = color("delay-fill");
       ctx.fillRect(x(start), top, x(Math.min(dates.length, lead)) - x(start), bottom - top);
     }
 
     for (const [index, short] of shortages.entries()) {
       if (!short) continue;
-      ctx.fillStyle = "#b42318";
+      ctx.fillStyle = color("risk");
       ctx.fillRect(x(index), bottom - 3, step, 3);
     }
     if (band) {
-      ctx.fillStyle = "rgba(30, 58, 95, .12)";
+      ctx.fillStyle = color("band");
       band.low.forEach((value, index) => {
         const upper = y(band.high[index]);
         ctx.fillRect(x(index), upper, step, y(value) - upper);
       });
     }
     if (selected !== null) {
-      ctx.fillStyle = "rgba(30, 58, 95, .09)";
+      ctx.fillStyle = color("focus");
       ctx.fillRect(x(selected), top, step, bottom - top);
     }
 
-    function line(x1, y1, x2, y2, color) {
-      ctx.strokeStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
-    }
-
     ctx.textAlign = "right";
-    for (const tick of [0, peak / 2, peak]) {
-      line(left, y(tick), right, y(tick), "#ece9e2");
-      ctx.fillStyle = "#5c6168";
+    for (const tick of [0, peak / 4, peak / 2, peak * .75, peak]) {
+      line(left, y(tick), right, y(tick), color("grid"));
+      ctx.fillStyle = color("axis");
       ctx.fillText(compact.format(tick), left - 5, y(tick));
     }
     ctx.setLineDash([3, 4]);
     if (lead < dates.length) {
       const delivery = x(lead);
-      line(delivery, top, delivery, bottom, delay ? "#b54708" : "#5c6168");
+      line(delivery, top, delivery, bottom, color(delay ? "delay" : "axis"));
       const label = delay ? "Receipt +" + delay + "d" : "Receipt";
-      ctx.fillStyle = delay ? "#b54708" : "#5c6168";
+      ctx.fillStyle = color(delay ? "delay" : "axis");
       ctx.textAlign = delivery > right - 82 ? "right" : "left";
       ctx.fillText(label, delivery + (ctx.textAlign === "right" ? -4 : 4), 12);
     }
     ctx.textAlign = "right";
     let lastLabel = bottom + 12;
-    for (const { value, label, color } of [...references].sort((a, b) => a.value - b.value)) {
+    for (const { value, label, tone } of [...references].sort((a, b) => a.value - b.value)) {
       const position = y(value);
-      line(left, position, right, position, color);
+      line(left, position, right, position, color(tone));
       lastLabel = Math.min(lastLabel - 13, position - 7);
       const text = label + " " + compact.format(value);
-      ctx.fillStyle = "#fff";
+      ctx.fillStyle = color("surface");
       const labelWidth = ctx.measureText(text).width + 4;
       ctx.fillRect(right - labelWidth, lastLabel - 6, labelWidth, 12);
-      ctx.fillStyle = color;
+      ctx.fillStyle = color(tone);
       ctx.fillText(text, right, lastLabel);
     }
-    for (const { days, color, dashed } of lines) {
+    for (const { days, dashed } of lines) {
       ctx.setLineDash(dashed ? [5, 4] : []);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = dashed ? 1.5 : 2;
+      ctx.strokeStyle = color(dashed ? "comparison" : "primary");
+      ctx.lineWidth = dashed ? 1.5 : 2.5;
       ctx.beginPath();
       ctx.moveTo(left, y(opening));
       days.forEach(({ receipt, balance }, index) => {
@@ -100,8 +104,13 @@ function createBalancePlot(canvas, caption, formatShortDate) {
         ctx.lineTo(x(index + 1), y(balance));
       });
       ctx.stroke();
+      if (selected !== null) {
+        const marker = y(days[selected].balance);
+        ctx.fillStyle = color(dashed ? "comparison" : "primary");
+        ctx.fillRect(x(selected + 1) - 3, marker - 3, 6, 6);
+      }
     }
-    ctx.fillStyle = "#5c6168";
+    ctx.fillStyle = color("axis");
     ctx.textAlign = "left";
     ctx.fillText(formatShortDate(dates[0]), left, bottom + 14);
     ctx.textAlign = "right";
@@ -133,9 +142,9 @@ function createBalancePlot(canvas, caption, formatShortDate) {
   new ResizeObserver(draw).observe(canvas);
   return next => {
     chart = next;
-    selected = null;
+    selected = next?.focusIndex >= 0 ? next.focusIndex : null;
     canvas.tabIndex = next?.dates.length ? 0 : -1;
-    caption.textContent = next?.summary ?? "Opening stock is required.";
+    caption.textContent = selected === null ? next?.summary ?? "Opening stock is required." : next.readDay(selected);
     draw();
   };
 }
@@ -155,8 +164,8 @@ function stockReferences(row) {
   const safety = row.stock.safetyStock ?? 0;
   const reorderPoint = row.arrivalDate ? row.preArrivalDemand + safety : null;
   const refs = [];
-  if (safety > 0 && safety !== reorderPoint) refs.push({ label: "Safety", value: safety, color: "#166534" });
-  if (reorderPoint > 0) refs.push({ label: safety === reorderPoint ? "ROP / safety" : "ROP", value: reorderPoint, color: "#b54708" });
+  if (safety > 0 && safety !== reorderPoint) refs.push({ label: "Safety", value: safety, tone: "safety" });
+  if (reorderPoint > 0) refs.push({ label: safety === reorderPoint ? "ROP / safety" : "ROP", value: reorderPoint, tone: "delay" });
   return refs;
 }
 
@@ -166,7 +175,7 @@ function createStockChart({ formatDate, formatShortDate, formatNumber }) {
   const legend = document.getElementById("stock-legend");
   const plot = createBalancePlot(canvas, caption, formatShortDate);
   return {
-    show(row, forecast, dates, error) {
+    show(row, forecast, dates, error, focusDate) {
       const usable = row?.stock?.onHand != null && row.status !== "unavailable";
       legend.hidden = !usable;
       if (!usable) {
@@ -180,8 +189,8 @@ function createStockChart({ formatDate, formatShortDate, formatNumber }) {
       const receipt = row.orderUnits ?? 0;
       const delay = lead - row.stock.leadDays;
       const draft = projectStock(opening, projection, lead, receipt);
-      const lines = [{ days: projectStock(opening, projection, lead, 0), color: "#5c6168", dashed: true }];
-      if (receipt) lines.push({ days: draft, color: "#1e3a5f" });
+      const lines = [{ days: projectStock(opening, projection, lead, 0), dashed: true }];
+      if (receipt) lines.push({ days: draft });
       const band = error > 0 ? {
         low: projectStock(opening, projection, lead, receipt, error).map(day => day.balance),
         high: projectStock(opening, projection, lead, receipt, -error).map(day => day.balance),
@@ -195,7 +204,7 @@ function createStockChart({ formatDate, formatShortDate, formatNumber }) {
         row.orderUnits === null ? "Draft unavailable" : "",
         band ? "Sensitivity ±" + formatNumber(error) + " units/day (holdout MAE)" : "",
       ].filter(Boolean).join(" · ");
-      plot({ dates, opening, lines, lead, delay, references: stockReferences(row), band, summary,
+      plot({ dates, opening, lines, lead, delay, references: stockReferences(row), band, summary, focusIndex: dates.indexOf(focusDate),
         shortages: draft.map((day, i) => i < lead && day.missed > 1e-9),
         readDay(index) {
           const day = draft[index];

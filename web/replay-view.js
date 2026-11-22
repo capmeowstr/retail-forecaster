@@ -134,8 +134,8 @@ function createReplayView({ dateRange, formatDate, formatShortDate, formatNumber
     plot({
       dates, opening, lead: settings.leadDays,
       lines: [
-        { days: baselineStock, color: "#5c6168", dashed: true },
-        { days: selectedStock, color: "#1e3a5f" },
+        { days: baselineStock, dashed: true },
+        { days: selectedStock },
       ],
       shortages: selectedStock.map((day, index) => day.missed > 0 || baselineStock[index].missed > 0),
       summary: "Opening " + formatNumber(opening) + " units · All eligible SKUs",

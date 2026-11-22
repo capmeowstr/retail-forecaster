@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#F6F5F1">
+  <meta name="theme-color" content="#f1efe6">
   <title>Retail Forecaster</title>
   <link rel="stylesheet" href="/styles.css">
   <script defer src="/csv.js"></script>
@@ -16,9 +16,9 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>Retail Forecaster</h1>
+    <h1><span class="brand-mark" aria-hidden="true"></span>Retail Forecaster</h1>
     <nav class="desk-nav" aria-label="Workspace">
-      <a href="#reorder-board" aria-current="location">Reorder</a>
+      <a href="#reorder-board" aria-current="location">Dispatch</a>
       <a href="#inventory-replay">Inventory replay</a>
       <a href="#forecast-evidence">Forecasts</a>
     </nav>
@@ -64,7 +64,7 @@ store-a:item-123,2026-11-02,0</code></pre>
     <section class="panel reorder-board" id="reorder-board" aria-labelledby="reorder-heading">
       <div class="reorder-heading">
         <div>
-          <h2 id="reorder-heading">Reorder plan</h2>
+          <h2 id="reorder-heading">Dispatch board</h2>
           <p class="subtext" id="reorder-start">Run a sales forecast to begin.</p>
         </div>
         <div class="reorder-actions">
@@ -91,6 +91,28 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03,10</code></pre>
         <p class="notice" id="reorder-import-error" data-kind="error" role="alert"></p>
       </div>
 
+      <div class="scenario-bar">
+        <label class="reorder-delay-control" for="reorder-delay">
+          <span class="field-heading">Delivery delay</span>
+          <select id="reorder-delay">
+            <option value="0">No delay</option>
+            <option value="1">1 day later</option>
+            <option value="2">2 days later</option>
+            <option value="3">3 days later</option>
+            <option value="4">4 days later</option>
+            <option value="5">5 days later</option>
+            <option value="6">6 days later</option>
+            <option value="7">7 days later</option>
+          </select>
+        </label>
+        <div class="scenario-steps" role="group" aria-label="Quick delivery scenarios">
+          <button type="button" data-delay="0" aria-pressed="true">Scheduled</button>
+          <button type="button" data-delay="2" aria-pressed="false" aria-label="Two days late">+2 days</button>
+          <button type="button" data-delay="5" aria-pressed="false" aria-label="Five days late">+5 days</button>
+        </div>
+        <p id="reorder-scenario-impact" class="reorder-scenario-impact" role="status"></p>
+      </div>
+
       <dl class="reorder-metrics">
         <div class="reorder-metric reorder-metric-risk">
           <dt>Short before delivery</dt>
@@ -115,42 +137,32 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03,10</code></pre>
           <section class="risk-calendar" aria-labelledby="risk-calendar-heading" id="reorder-calendar" hidden>
             <div class="calendar-heading">
               <div>
-                <h3 id="risk-calendar-heading">Shortage calendar</h3>
-                <p class="subtext" id="reorder-calendar-summary">Items first running short before delivery</p>
+                <h3 id="risk-calendar-heading">Shortage runway</h3>
+                <p class="subtext" id="reorder-calendar-summary">First projected shortage before delivery</p>
               </div>
               <button class="button button-text calendar-clear" id="reorder-clear-date" type="button" hidden>Clear date</button>
             </div>
             <div class="calendar-days" id="reorder-calendar-days"></div>
           </section>
-          <div class="reorder-controls">
-            <label for="reorder-search">
-              <span class="field-heading">Find SKU</span>
-              <input id="reorder-search" type="search" placeholder="Item or supplier">
-            </label>
-            <label for="reorder-filter">
-              <span class="field-heading">Show</span>
-              <select id="reorder-filter">
-                <option value="all">All items</option>
-                <option value="action">Needs action</option>
-                <option value="covered">Covered</option>
-                <option value="needs-data">Needs data</option>
-              </select>
-            </label>
-            <label class="reorder-delay-control" for="reorder-delay">
-              <span class="field-heading">Delivery delay</span>
-              <select id="reorder-delay">
-                <option value="0">No delay</option>
-                <option value="1">1 day later</option>
-                <option value="2">2 days later</option>
-                <option value="3">3 days later</option>
-                <option value="4">4 days later</option>
-                <option value="5">5 days later</option>
-                <option value="6">6 days later</option>
-                <option value="7">7 days later</option>
-              </select>
-            </label>
+          <div class="queue-toolbar">
+            <h3>Reorder queue</h3>
+            <button class="button button-text stock-jump" id="reorder-inspect" type="button" disabled>Inspect selected SKU</button>
+            <div class="reorder-controls">
+              <label for="reorder-search">
+                <span class="field-heading">Find SKU</span>
+                <input id="reorder-search" type="search" placeholder="Item or supplier">
+              </label>
+              <label for="reorder-filter">
+                <span class="field-heading">Show</span>
+                <select id="reorder-filter">
+                  <option value="all">All items</option>
+                  <option value="action">Needs action</option>
+                  <option value="covered">Covered</option>
+                  <option value="needs-data">Needs data</option>
+                </select>
+              </label>
+            </div>
           </div>
-          <p id="reorder-scenario-impact" class="reorder-scenario-impact" role="status"></p>
           <div class="table-wrap reorder-table" id="reorder-items" tabindex="0" role="region" aria-label="Reorder recommendations">
             <table>
               <thead><tr><th scope="col">Item</th><th scope="col">Action</th><th scope="col">Delivery</th><th scope="col">Order qty</th></tr></thead>
@@ -167,25 +179,36 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03,10</code></pre>
         </div>
 
         <section class="reorder-item" aria-labelledby="reorder-item-heading">
-          <div class="item-heading">
-            <div>
-              <h3 id="reorder-item-heading" tabindex="-1">Stock timeline</h3>
-              <p class="subtext" id="reorder-selected">Choose an item to review its order.</p>
+          <div class="stock-console">
+            <div class="item-heading">
+              <div>
+                <h3 id="reorder-item-heading" tabindex="-1">Stock timeline</h3>
+                <p class="subtext" id="reorder-selected">Choose an item</p>
+                <p class="subtext" id="reorder-supplier"></p>
+              </div>
+              <span class="plan-status" id="reorder-selected-status" hidden></span>
             </div>
-            <span class="plan-status" id="reorder-selected-status" hidden></span>
+            <figure class="stock-figure" aria-labelledby="reorder-item-heading">
+              <div class="stock-legend" id="stock-legend" aria-hidden="true">
+                <span><i></i>With draft</span>
+                <span><i></i>Opening stock only</span>
+                <span class="legend-risk"><i></i>Shortfall</span>
+                <span class="legend-delay" hidden><i></i>Delay window</span>
+                <span class="legend-band" hidden><i></i>Demand sensitivity</span>
+              </div>
+              <canvas id="stock-chart" tabindex="0" role="img" aria-label="Projected stock by day" aria-describedby="stock-caption stock-keyboard" aria-keyshortcuts="ArrowLeft ArrowRight Escape"></canvas>
+              <figcaption id="stock-caption" class="subtext" aria-live="polite"></figcaption>
+            </figure>
           </div>
-          <figure class="stock-figure" aria-labelledby="reorder-item-heading">
-            <div class="stock-legend" id="stock-legend" aria-hidden="true">
-              <span><i></i>With draft</span>
-              <span><i></i>Opening stock only</span>
-              <span class="legend-risk"><i></i>Shortfall</span>
-              <span class="legend-delay" hidden><i></i>Delay window</span>
-              <span class="legend-band" hidden><i></i>Demand sensitivity</span>
-            </div>
-            <canvas id="stock-chart" tabindex="0" role="img" aria-label="Projected stock by day" aria-describedby="stock-caption stock-keyboard" aria-keyshortcuts="ArrowLeft ArrowRight Escape"></canvas>
-            <figcaption id="stock-caption" class="subtext"></figcaption>
-          </figure>
-          <div class="reorder-detail" id="reorder-detail" role="status"></div>
+          <div class="order-ticket">
+            <h3>Order ticket</h3>
+            <dl class="ticket-facts" id="reorder-ticket" hidden>
+              <div><dt>Supplier receipt</dt><dd><span id="reorder-ticket-arrival"></span><small id="reorder-ticket-arrival-before" class="ticket-before"></small></dd></div>
+              <div><dt>Draft quantity</dt><dd><span id="reorder-ticket-qty"></span><small id="reorder-ticket-qty-before" class="ticket-before"></small></dd></div>
+              <div><dt>Short before receipt</dt><dd><span id="reorder-ticket-short"></span><small id="reorder-ticket-short-before" class="ticket-before"></small></dd></div>
+            </dl>
+            <div class="reorder-detail" id="reorder-detail" role="status"></div>
+          </div>
           <button type="button" class="button button-text stock-back" id="reorder-back">Back to items</button>
           <details class="stock-settings" id="stock-settings">
             <summary>Item settings</summary>

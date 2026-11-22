@@ -2,7 +2,7 @@
 
 Retail Forecaster drafts SKU orders from daily sales and opening stock, and shows which items may run short when a supplier delivery slips. It also replays orders on held-out sales and runs through a local Python server or as a standalone browser file.
 
-![Reorder ledger with a shortage calendar, SKU queue, and stock timeline under a two-day delay](docs/reorder-workspace.png)
+![Dispatch board with a shortage runway, stock timeline, and order ticket under a two-day delay](docs/reorder-workspace.png)
 
 ## Quick start
 
@@ -14,7 +14,7 @@ cd retail-forecaster
 python3 serve.py
 ```
 
-Open <http://127.0.0.1:8765>. Select **2 days later** under **Delivery delay**, then pick a shortage date to filter the queue. To load your own data, use **Sales CSV** and **Import inventory**. [CSV columns and examples](docs/methodology.md#inputs)
+Open <http://127.0.0.1:8765>. Select **+2 days** to see what a late receipt changes on the order ticket. Pick a shortage bar to filter the queue and inspect that day on the stock timeline. To load your own data, use **Sales CSV** and **Import inventory**. [CSV columns and examples](docs/methodology.md#inputs)
 
 For a single file you can open offline, run the preview builder or download `retail-forecaster-offline` from a successful [CI run](https://github.com/capmeowstr/retail-forecaster/actions).
 

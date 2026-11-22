@@ -7,9 +7,12 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     "page", "previous", "next", "selected", "form", "on-hand", "lead", "cover",
     "pack", "safety", "save", "detail", "item-evidence", "selected-status", "stock-count",
     "calendar", "calendar-days", "calendar-summary", "clear-date", "items", "item-heading", "back",
+    "supplier", "inspect", "ticket", "ticket-arrival", "ticket-qty", "ticket-short",
+    "ticket-arrival-before", "ticket-qty-before", "ticket-short-before",
   ].map(id => [id, document.getElementById("reorder-" + id)]));
   const stockChart = createStockChart({ formatDate, formatShortDate, formatNumber });
   const stockSettings = document.getElementById("stock-settings");
+  const scenarioButtons = document.querySelectorAll(".scenario-steps button");
   const singleColumn = window.matchMedia("(max-width: 849px)");
   const actions = {
     expedite: "Expedite",
@@ -31,6 +34,7 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
   let importRequest = null;
   let plan = [];
   let itemPlans = new Map();
+  let scheduledPlans = new Map();
   let itemHoldout = new Map();
   let orders = [];
   let selectedId = null;
@@ -100,8 +104,9 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     ui["clear-date"].hidden = shortageDate === null;
     ui["calendar-summary"].textContent = shortageDate
       ? "Showing items first short on " + formatShortDate(shortageDate)
-      : "Items first running short before delivery";
+      : "First projected shortage before delivery";
 
+    const peak = Math.max(1, ...Array.from(byDate.values(), items => items.length));
     for (const date of data.forecast_dates) {
       const matches = byDate.get(date);
       const cell = document.createElement(matches ? "button" : "div");
@@ -111,8 +116,14 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
       label.textContent = date === data.forecast_dates[0] || date.endsWith("-01")
         ? formatShortDate(date) : date.slice(-2).replace(/^0/, "");
       const count = document.createElement("span");
-      count.textContent = matches ? formatNumber(matches.length) : "–";
-      cell.append(label, count);
+      count.textContent = matches ? formatNumber(matches.length) : "";
+      count.className = "runway-count";
+      count.setAttribute("aria-hidden", "true");
+      const track = document.createElement("span");
+      track.className = "runway-track";
+      track.setAttribute("aria-hidden", "true");
+      track.style.setProperty("--load", (matches ? (matches.length / peak) * 100 : 0) + "%");
+      cell.append(count, track, label);
       if (matches) {
         cell.type = "button";
         cell.dataset.date = date;
@@ -126,6 +137,7 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
           renderCalendar();
           renderRows();
           if (shortageDate) onSelect(matches[0].id);
+          else renderDecision();
           ui["calendar-days"].querySelector('[data-date="' + date + '"]')?.focus({ preventScroll: true });
         });
       } else {
@@ -170,10 +182,7 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
       button.textContent = row.id;
       button.addEventListener("click", () => {
         onSelect(row.id);
-        if (singleColumn.matches) {
-          ui["item-heading"].focus({ preventScroll: true });
-          ui["item-heading"].scrollIntoView({ block: "start" });
-        }
+        if (singleColumn.matches) focusStock();
       });
       item.append(button);
       addCellText(item, row.stock?.supplier, "plan-note");
@@ -196,13 +205,36 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     highlightSelection();
   }
 
+  function renderTicket(row) {
+    ui.supplier.textContent = row?.stock?.supplier ?? "";
+    ui.ticket.hidden = row?.stock?.onHand == null || row.status === "unavailable";
+    if (ui.ticket.hidden) return;
+
+    const scheduled = scheduledPlans.get(row.id);
+    const values = [
+      ["arrival", item => item.arrivalDate ? formatShortDate(item.arrivalDate) : "Outside horizon"],
+      ["qty", item => item.orderUnits === null ? "Pending" : unitsText(item.orderUnits)],
+      ["short", item => item.status === "expedite" ? shortfallText(item) :
+        item.effectiveLeadDays > data.forecast_dates.length ? "Unknown" : "0 units"],
+    ];
+    for (const [key, getValue] of values) {
+      const value = getValue(row);
+      const before = scheduled ? getValue(scheduled) : value;
+      ui["ticket-" + key].textContent = value;
+      ui["ticket-" + key + "-before"].textContent = before !== value ? "Scheduled " + before : "";
+    }
+    ui["ticket-short"].dataset.risk = String(row.status === "expedite");
+  }
+
   function renderDecision() {
     const row = itemPlans.get(selectedId);
     const forecast = data?.series.find(item => item.id === selectedId)?.forecast ?? [];
     const score = itemHoldout.get(selectedId);
     const error = score ? score.actual.reduce((total, value, index) =>
       total + Math.abs(value - score.selected[index]), 0) / score.actual.length : 0;
-    stockChart.show(row, forecast, data?.forecast_dates ?? [], error);
+    stockChart.show(row, forecast, data?.forecast_dates ?? [], error, shortageDate);
+    renderTicket(row);
+    ui.inspect.disabled = !row;
     ui["selected-status"].hidden = !row;
     ui["selected-status"].textContent = row ? actions[row.status] : "";
     ui["selected-status"].dataset.status = row?.status ?? "";
@@ -253,12 +285,11 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     if (selectedId !== null && stock.onHand === null) stockSettings.open = true;
   }
 
-  function describeDelay(delay) {
-    if (!data || !delay) return "";
-    const scheduled = retailReorder.buildPlan(data.series, data.forecast_dates, inventory);
+  function describeDelay() {
+    if (!scheduledPlans.size) return "";
     let newlyShort = 0;
     let newlyLimited = 0;
-    for (const row of scheduled) {
+    for (const row of scheduledPlans.values()) {
       const scenario = itemPlans.get(row.id);
       if (scenario.status === "expedite" && row.status !== "expedite") newlyShort++;
       if (needsLongerForecast(scenario) && !needsLongerForecast(row)) newlyLimited++;
@@ -276,6 +307,13 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     const delay = Number(ui.delay.value || 0);
     plan = data ? retailReorder.buildPlan(data.series, data.forecast_dates, inventory, delay) : [];
     itemPlans = new Map(plan.map(row => [row.id, row]));
+    const scheduled = data && delay ? retailReorder.buildPlan(data.series, data.forecast_dates, inventory) : [];
+    scheduledPlans = new Map(scheduled.map(row => [row.id, row]));
+    for (const button of scenarioButtons) {
+      button.disabled = !data;
+      button.setAttribute("aria-pressed", String(Number(button.dataset.delay) === delay));
+    }
+    ui.delay.disabled = !data;
     orders = plan.filter(row => row.orderUnits > 0);
     const riskCount = plan.filter(row => row.status === "expedite").length;
     ui["risk-count"].textContent = data ? formatNumber(riskCount) : "—";
@@ -285,7 +323,7 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     ui["order-units"].textContent = formatNumber(orderUnits);
     const stockCount = plan.filter(row => row.stock?.onHand != null).length;
     ui["stock-count"].textContent = data ? formatNumber(stockCount) + "/" + formatNumber(plan.length) : "—";
-    ui["scenario-impact"].textContent = describeDelay(delay);
+    ui["scenario-impact"].textContent = describeDelay();
     ui.export.disabled = !orders.length;
     ui.export.textContent = delay ? "Download scenario CSV" : "Download order draft";
     if (data) {
@@ -383,6 +421,11 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     if (file) importInventory(file);
   });
 
+  function focusStock() {
+    ui["item-heading"].focus({ preventScroll: true });
+    ui["item-heading"].scrollIntoView({ block: "start" });
+  }
+  ui.inspect.addEventListener("click", focusStock);
   ui.back.addEventListener("click", () => {
     const item = visibleItems.find(([id]) => id === selectedId);
     (item?.[2] ?? ui.items).focus();
@@ -418,16 +461,24 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     refreshPlan();
   });
 
-  ui.delay.addEventListener("change", () => {
+  function changeDelay() {
     page = 0;
     refreshPlan();
-  });
+  }
+  ui.delay.addEventListener("change", changeDelay);
+  for (const button of scenarioButtons) {
+    button.addEventListener("click", () => {
+      ui.delay.value = button.dataset.delay;
+      changeDelay();
+    });
+  }
   ui["clear-date"].addEventListener("click", () => {
     const date = shortageDate;
     shortageDate = null;
     page = 0;
     renderCalendar();
     renderRows();
+    renderDecision();
     ui["calendar-days"].querySelector('[data-date="' + date + '"]')?.focus({ preventScroll: true });
   });
   for (const [node, event] of [[ui.filter, "change"], [ui.search, "input"]]) {
