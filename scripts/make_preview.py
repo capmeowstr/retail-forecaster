@@ -6,7 +6,7 @@ import io
 import json
 from pathlib import Path
 
-from make_demo import write_demo
+from scripts.make_demo import write_demo
 from serve import HORIZONS, RETAIL_SAMPLE, WEB, analyze
 
 

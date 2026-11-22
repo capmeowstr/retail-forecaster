@@ -1,0 +1,6 @@
+{
+  "name": "retail-forecaster",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test tests/test_reorder.js tests/test_replay.js" }
+}

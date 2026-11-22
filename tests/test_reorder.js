@@ -6,7 +6,7 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
-const sources = ["csv.js", "reorder.js"].map(name => fs.readFileSync(path.join(__dirname, "web", name), "utf8"));
+const sources = ["csv.js", "reorder.js"].map(name => fs.readFileSync(path.join(__dirname, "..", "web", name), "utf8"));
 const { parseInventory, sampleInventory, buildPlan } = vm.runInNewContext([...sources, "retailReorder"].join("\n"));
 const dates = Array.from({ length: 14 }, (_, index) => new Date(Date.UTC(2026, 9, 19 + index)).toISOString().slice(0, 10));
 const unitForecast = [3, 4, 6, 4];

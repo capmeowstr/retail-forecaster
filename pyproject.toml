@@ -1,0 +1,10 @@
+[project]
+name = "retail-forecaster"
+version = "0.1.0"
+description = "Local inventory planning and held-out demand replay"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+sample = ["openpyxl==3.1.5"]

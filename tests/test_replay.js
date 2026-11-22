@@ -6,7 +6,7 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
-const scripts = ["reorder.js", "replay.js"].map(name => fs.readFileSync(path.join(__dirname, "web", name), "utf8"));
+const scripts = ["reorder.js", "replay.js"].map(name => fs.readFileSync(path.join(__dirname, "..", "web", name), "utf8"));
 const { run } = vm.runInNewContext([...scripts, "retailReplay"].join("\n"));
 const settings = { openingDays: 1, leadDays: 1, packSize: 6, group: "all" };
 const item = {
@@ -89,9 +89,9 @@ test("invalid timing is rejected and unsupported quantities are omitted from bot
 
 test("public retail replay reproduces matched and unrestricted 14-day comparisons", () => {
   const analysisScripts = ["csv.js", "forecast-engine.js"].map(name =>
-    fs.readFileSync(path.join(__dirname, "web", name), "utf8"));
+    fs.readFileSync(path.join(__dirname, "..", "web", name), "utf8"));
   const analyze = vm.runInNewContext([...analysisScripts, "analyzeRetailCsv"].join("\n"));
-  const csv = fs.readFileSync(path.join(__dirname, "sample-data", "uci-retail.csv"), "utf8");
+  const csv = fs.readFileSync(path.join(__dirname, "..", "sample-data", "uci-retail.csv"), "utf8");
   const [header, ...dailySales] = csv.trimEnd().split("\n");
   const windows = [
     ["2011-11-11", "2011-11-24", 5125, 5166, 5003, 7456, 16068, 5125, 5697],

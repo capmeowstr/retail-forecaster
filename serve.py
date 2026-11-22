@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from forecast import BASELINE, DAY, evaluate, parse_history, predict
-from make_demo import write_demo
+from scripts.make_demo import write_demo
 
 
 WEB = Path(__file__).resolve().parent / "web"

@@ -5,3 +5,5 @@ __pycache__/
 .env.*
 .DS_Store
 Retail_Forecaster_Prototype.zip
+
+Retail_Forecaster_Demo.html

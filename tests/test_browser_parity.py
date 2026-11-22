@@ -9,11 +9,11 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
-from make_demo import write_demo
+from scripts.make_demo import write_demo
 from serve import analyze
 
 
-WEB = Path(__file__).parent / "web"
+WEB = Path(__file__).resolve().parents[1] / "web"
 RUN_BROWSER_ENGINE = """
 const fs = require('node:fs');
 const vm = require('node:vm');
