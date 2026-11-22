@@ -1,19 +1,8 @@
-# Retail Forecaster guide
+# Retail Forecaster methodology
 
-```mermaid
-flowchart TD
-    Sales["Daily sales CSV"] --> History["Validated sales series"]
-    History --> Fit["Forecast and validation"]
-    Fit --> Draft["Reorder plan"]
-    Stock["Opening inventory CSV"] --> Draft
-    Fit --> Replay["Held-out inventory replay"]
-```
+## Inputs
 
-## Sales and inventory inputs
-
-Both inputs accept UTF-8 CSVs up to 10 MiB each. The standalone dashboard processes sales in the browser. The optional local Python server processes sales in memory on the same device. The app keeps uploaded data for the current session.
-
-### Sales history
+Files are processed in the offline browser or by the server bound to localhost. Each input can be up to 10 MiB. Uploads are kept in memory for the current session.
 
 ```csv
 series_id,date,units
@@ -21,71 +10,96 @@ store-a:item-123,2026-11-01,6
 store-a:item-123,2026-11-02,0
 ```
 
-Give each product or product-store pair a series ID. Use ISO dates and one row per day per series with finite, nonnegative sales. Enter zero for observed days without sales. A series can begin on a different date, and all series must end on the same date. Gaps and duplicates produce an error.
-
-### Opening inventory
+Use one row per series and date. Dates are YYYY-MM-DD. Sales must be finite and nonnegative. Include a zero for each observed zero-sales day. Series can begin on different dates and must end on the same date.
 
 ```csv
-series_id,on_hand,lead_days,cover_days,pack_size,supplier,stock_date
-store-a:item-123,50,2,7,12,Example Supplier,2026-11-03
+series_id,on_hand,lead_days,cover_days,pack_size,supplier,stock_date,safety_stock
+store-a:item-123,50,2,7,12,Example Supplier,2026-11-03,10
 ```
 
-Match each series ID with sales history. Enter the inventory at the start of the first forecast date. A blank on-hand amount is treated as missing. Optional lead time defaults to zero days, coverage to seven days, and pack size to one unit. Include a supplier name to make it searchable. When a stock date is supplied, it must match the first forecast date.
+Inventory IDs match sales IDs. Opening stock is measured at the start of the first forecast day. If supplied, `stock_date` must match that day. A blank `on_hand` means stock is unknown. Lead time defaults to 0 days, coverage to 7 days, pack size to 1, and safety stock reference to 0. These inputs take whole numbers. A supplier name makes the SKU searchable by supplier.
 
-The calendar counts items on their first projected shortage date **before delivery**. Clicking that date filters the reorder queue. The stock timeline shows the opening balance consumed by forecast demand, with a proposed receipt added before sales on its delivery date. Use the arrow keys on the chart to inspect the date, sales forecast, and stock balances.
+## Forecasts
 
-Lead time counts full days before delivery. For a Monday start and a lead time of two days, the receipt is available before Wednesday sales. The draft covers the chosen number of days from delivery and rounds the residual demand up to whole packs. Forecast sales missed before delivery contribute to pre-delivery risk. The draft uses the stock that remains at delivery to calculate post-delivery requirements. If the horizon does not cover the complete cycle, the planner shows any identifiable shortage and requests a longer forecast for the draft.
-
-The order export includes positive draft quantities for the scenario, with delivery dates and lead times. The forecast export retains fractional expected sales. CSV exports protect spreadsheet-formula-like names and IDs by prefixing them with an apostrophe.
-
-## Forecasting and evaluation
-
-| Method | Estimate |
+| Method | Computation |
 | --- | --- |
-| **Repeat last week** | Repeats the last seven observed days and averages shorter histories. |
-| **Recent average** | Uses average sales from the last 28 observed days. |
-| **Item weekday average** | Estimates each item's weekdays over the last eight weeks, with sparse weekdays pulled toward that item's mean. |
-| **Pooled weekday pattern** | Learns a weekday pattern across items and scales it to each item's recent sales. |
+| Weekly baseline (`seasonal-naive`) | Repeat the last seven days. Use their mean when fewer than seven days are available. |
+| Recent mean (`recent-mean`) | Average the last 28 days, or all available days if shorter. |
+| Item weekday mean (`weekday-mean`) | Over the last 56 days, each weekday estimate is (sum for weekday + 2 × item mean) / (weekday observation count + 2). |
+| Pooled weekday (`pooled-weekday`) | Pool weekday totals over up to eight complete weeks per item and divide by the mean of those seven totals. Multiply the weekday factor by each item's mean over up to four complete weeks. With a zero pooled mean the factors are 1. An item with less than one week uses its available days for its mean. |
 
-Three historical selection windows are followed by a reserved holdout. Each window lasts as long as the forecast horizon. The selection chooses the method with the lowest total absolute error and reports holdout results against the weekly baseline. Forecasts use the available observations up to the relevant cutoff.
+The dashboard uses three chronological selection windows of length H, followed by a reserved H-day holdout. Every fit uses data through the cutoff preceding its window. Series need at least 28 training days at the cutoff to enter the corresponding fold. The dashboard needs at least one series with 28 + 4H days to start model selection. For shorter histories it uses the weekly baseline with its short-history mean fallback.
 
-At least one series must have 28 training days plus four forecast windows for the dashboard to compare models. The thresholds are 56, 84, and 140 days of history for the 7-, 14-, and 28-day horizons. With shorter histories the dashboard uses a recent sales baseline. WAPE and unit bias are undefined when observed sales sum to zero. Sparse series have positive sales on fewer than half of the last 56 training days.
+Selection minimizes total absolute error across the three windows, with ties settled by model order in the table. MAE is total absolute error divided by item-days. WAPE is total absolute error divided by total observed units. Unit bias is (total forecast − total observed) / total observed. WAPE and bias are undefined when total observed units are zero. In the holdout report, a series is sparse when fewer than half of its last 56 available training days have positive sales. The final forward forecast uses all observations through the current cutoff.
 
-### Inventory replay
+[`forecast.py`](../forecast.py) defines the reference models. The local server calls it directly. [`web/forecast-engine.js`](../web/forecast-engine.js) supports uploads in the offline build. [`tests/test_browser_parity.py`](../tests/test_browser_parity.py) checks report keys, array order, discrete values, and floating-point values to `1e-12` absolute and relative tolerance. The offline build uses precomputed reference forecasts for the two bundled datasets.
 
-Replays estimate opening stock from the preceding 28-day average and the chosen opening days. The same start stock, lead time, pack size, and observed sales apply to both methods. Each plan gets one receipt before sales on its delivery date. Any observed demand exceeding available stock counts as a simulated missed sale. The model never sees held-out sales when drafting the orders.
+### Synthetic holdout
 
-The shared unit limit uses the smaller unrestricted order. Each forecast allocates the available packs according to the demand a pack could cover, favoring earlier forecast shortages when the coverage is equal. Unrestricted orders use each forecast's unconstrained quantities. The product breakdown uses selected minus baseline, ordered by absolute difference in missed units. The export includes all eligible products and the run settings.
+The [evaluation fixture](../tests/fixtures/demo-evaluation.json) uses 5–18 October 2026 and selects the pooled weekday model.
 
-### Recorded retail results
+| Series | Selected WAPE | Weekly WAPE |
+| --- | ---: | ---: |
+| All 24 | 18.12% | 25.36% |
+| 8 regular | 12.01% | 17.96% |
+| 16 sparse | 156.86% | 193.53% |
 
-Each row uses 24 UCI products, four days of opening stock, a two-day lead time, and 12-unit packs. The two 14-day windows are disjoint. The shorter and longer windows ending on 8 December overlap the later 14-day window.
+The sparse segment exceeds 100% WAPE under both methods. The weekly baseline also has smaller absolute error for demo-05 (44 vs 45.42 units over the holdout) and demo-14 (11 vs 16.71 units).
 
-| Held-out dates, 2011 | Units ordered per plan | Selected missed units | Weekly missed units | Selected ending stock | Weekly ending stock |
+## Reorder
+
+Let S be opening units, L be scheduled lead days plus the delay, C be post-delivery coverage days, and P be units per pack. Let Dlead be forecast units over days 1 through L and Dcover be forecast units over days L+1 through L+C.
+
+- Pre-delivery shortage = max(0, Dlead − S). Stock at delivery = max(0, S − Dlead).
+- Draft units = P × ceil(max(0, Dcover − stock at delivery − 1e-9) / P). A candidate draft needs L+C days. The receipt is available before sales on day L+1.
+- The displayed reorder point is Dlead + safety stock. Safety stock is an optional user-entered reference, with a default of zero. Neither reference changes the draft. The reorder point is omitted when the receipt falls outside the plotted horizon.
+- The calendar counts the first forecast shortage before delivery for each SKU. In the chart, each daily forecast consumes stock at the end of its day. A draft receipt adds stock at the beginning of the delivery day. The sensitivity band reruns the same draft at max(0, daily forecast ± SKU holdout MAE), with the receipt fixed. It is a scenario range, with no calibrated coverage level.
+
+CSV exports include fractional expected units where relevant. Spreadsheet-formula-like names and IDs are prefixed with an apostrophe.
+
+## Replay
+
+Opening stock is ceil(mean sales over the 28 days preceding the holdout × opening days − 1e-9), floored at zero. Both forecasts use identical opening stock, delivery day, and pack size. Each receives one order. Simulated daily closing stock is max(0, opening + receipt − observed sales). Simulated missed units are max(0, observed sales − opening − receipt), with gaps up to 1e-9 ignored. Fill rate is (observed units − missed units) / observed units. The chart sums daily closing stock across eligible SKUs and marks days with any simulated shortage.
+
+The shared unit cap is the smaller unrestricted draft across the two forecasts. Each plan allocates whole packs by expected sales covered per pack, then projected shortage day, then SKU. Unrestricted replay uses each plan's original draft. The impact view reports selected minus weekly baseline, sorted by absolute missed-unit change. The export includes every eligible SKU.
+
+### Recorded sales replay
+
+Each run uses 24 UCI products, four opening days, two lead days, and twelve units per pack. The two 14-day windows are disjoint. The 7- and 28-day windows overlap the later 14-day window.
+
+| Holdout in 2011 | Ordered units per plan | Selected missed | Weekly missed | Selected end stock | Weekly end stock |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 11–24 November | 16,068 | 5,125 | 5,697 | 5,003 | 5,575 |
-| 2–8 December | 3,144 | 4,550 | 5,118 | 912 | 1,480 |
-| 25 November–8 December | 15,276 | 4,030 | 4,638 | 3,655 | 4,263 |
-| 11 November–8 December | 38,400 | 10,696 | 10,162 | 10,282 | 9,748 |
+| 11–24 Nov | 16,068 | 5,125 | 5,697 | 5,003 | 5,575 |
+| 2–8 Dec | 3,144 | 4,550 | 5,118 | 912 | 1,480 |
+| 25 Nov–8 Dec | 15,276 | 4,030 | 4,638 | 3,655 | 4,263 |
+| 11 Nov–8 Dec | 38,400 | 10,696 | 10,162 | 10,282 | 9,748 |
 
-With unrestricted orders in the later 14-day window, the selected forecast missed 1,606 fewer units and ordered 2,244 more. The shared unit limit reduces the difference in missed units to 608. The dataset contains recorded sales. Further evaluation requires more retailers and actual inventory, receipt, purchase cost, and unmet-demand histories.
+The unrestricted version of the later 14-day replay missed 1,606 fewer units and ordered 2,244 more. These are simulated outcomes on sales from one shop. Equal units ordered can still imply different spend across SKUs.
 
-### Command-line checks
+## Data and license
+
+The [UCI Online Retail dataset](https://doi.org/10.24432/C5BW33) by Daqing Chen includes wholesale customers and is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The sample groups positive UK invoice quantities by product and day. It drops cancellations, returns, and the partial final date. Product ranking uses data through 10 November 2011, with twelve regular and twelve sparse products. Only daily totals are distributed.
+
+Wholesale bulk invoices can distort the daily pattern. True stockouts, lost orders, replenishment and purchase costs are unobserved. A zero in the sample means no recorded positive sale. The software is [MIT-licensed](../LICENSE).
+
+## Reproduce
 
 ```sh
-python3 make_demo.py history.csv
+python3 -m scripts.make_demo history.csv
 python3 forecast.py evaluate history.csv --horizon 14 --report evaluation.json
 python3 forecast.py predict history.csv --horizon 14 --model pooled-weekday --output forecast.csv
 ```
 
-The synthetic sample has 24 items. With its bundled seed, the pooled weekday model has **18.12% WAPE** on the 14-day holdout compared with **25.36%** for its weekly baseline. The results include substantial errors for sparse items. [Synthetic evaluation report](../demo-evaluation.json)
-
-## Data and licensing
-
-The bundled sales data adapts *Online Retail* by Daqing Chen (2015), UCI Machine Learning Repository, licensed under CC BY 4.0. The preparation script groups positive UK invoice quantities into daily product totals, excludes cancellations and the final partial date, and fills days without recorded sales with zeros. Product ranking uses dates through 10 November 2011 and includes 12 regular and 12 sparse series. Only daily product totals are distributed. [Dataset DOI](https://doi.org/10.24432/C5BW33) · [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-
-Download the UCI ZIP archive and use the preparation script with openpyxl installed. [UCI ZIP archive](https://archive.ics.uci.edu/static/public/352/online+retail.zip)
+The UCI fixture builder requires openpyxl 3.1.5 and the [source ZIP](https://archive.ics.uci.edu/static/public/352/online+retail.zip).
 
 ```sh
-python3 prepare_retail_sample.py online+retail.zip sample-data/uci-retail.csv
+python3 -m scripts.prepare_retail_sample online+retail.zip sample-data/uci-retail.csv
+```
+
+To recapture the documentation images, install Pillow, Playwright, and Chromium in a development environment.
+
+```sh
+python3 -m pip install pillow playwright
+python3 -m playwright install chromium
+python3 -m scripts.capture_previews
 ```

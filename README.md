@@ -1,60 +1,60 @@
 # Retail Forecaster
 
-Plan supplier orders from sales and stock CSVs. See which items run short before delivery, draft orders in whole packs, and replay the decisions on held-out sales.
+Retail Forecaster drafts SKU orders from daily sales and opening stock, and shows which items may run short when a supplier delivery slips. It also replays orders on held-out sales and runs through a local Python server or as a standalone browser file.
 
-![Retail Forecaster showing a two-day delivery delay in the reorder workspace, shortage calendar, and stock timeline](docs/reorder-workspace.png)
+![Reorder ledger with a shortage calendar, SKU queue, and stock timeline under a two-day delay](docs/reorder-workspace.png)
 
-## Try it
+## Quick start
 
-1. Open [Retail_Forecaster_Demo.html](Retail_Forecaster_Demo.html) on GitHub and select **Download raw file**.
-2. Open the downloaded HTML in your browser. The workspace starts with sample sales and inventory and runs offline.
-3. Select **2 days later** under **Simulate delivery delay**. Click an orange date in the shortage calendar to see the items that first run short that day.
-
-To run from a clone with Python 3.10 or later, enter this command and open the local address it prints.
+Use Python 3.10 or later and a recent browser.
 
 ```sh
+git clone https://github.com/capmeowstr/retail-forecaster.git
+cd retail-forecaster
 python3 serve.py
 ```
 
-## The reorder workflow
+Open <http://127.0.0.1:8765>. Select **2 days later** under **Delivery delay**, then pick a shortage date to filter the queue. To load your own data, use **Sales CSV** and **Import inventory**. [CSV columns and examples](docs/methodology.md#inputs)
 
-| View | What it answers |
-| --- | --- |
-| **Shortage calendar** | Which items first run short before their delivery, and on which day? |
-| **Stock timeline** | How much stock is projected each day, with and without the draft order? |
-| **Order draft** | What pack quantities can I order, and which items need a faster delivery? |
-| **Inventory replay** | How did the forecasts compare on missed sales, orders, and ending stock? |
-| **Forecast evidence** | How did the selected model perform against the weekly baseline on held-out dates? |
-
-In the synthetic example, a two-day delay moves delivery for demo-01 from **21 to 23 October**. The draft rises from **108 to 132 units**, and the item shows an estimated **11.27 units short before delivery**.
-
-![The demo-01 stock timeline switches between the scheduled delivery and a two-day delay](docs/delivery-delay.gif)
-
-## Compare decisions on recorded sales
-
-Choose **Retail sample**, then **View inventory replay**. With a shared order quantity, each forecast allocates the same total number of units. The product-level bars show where those allocations led to more or fewer missed units.
-
-![Inventory replay comparing 4,030 and 4,638 missed units at 15,276 units ordered per plan, with product-level impacts](docs/inventory-replay.png)
-
-| Held-out window | Ordered units per plan | Selected missed units | Weekly baseline missed units |
-| --- | ---: | ---: | ---: |
-| 25 Nov–8 Dec 2011 | 15,276 | 4,030 | 4,638 |
-| 11 Nov–8 Dec 2011 | 38,400 | 10,696 | 10,162 |
-
-The sample uses recorded UCI Online Retail sales. Opening stock and deliveries are simulated. A shared unit limit controls quantity, and comparing spend requires purchase costs. [Data and evaluation method](docs/methodology.md)
-
-## Bring your own data
-
-Import a sales CSV with daily **series_id**, **date**, and **units** columns. Import an inventory CSV or open **Item settings** to enter stock, lead time, coverage, and pack size. Download order, forecast, and replay CSVs from their respective views. [CSV formats, examples, and model details](docs/methodology.md)
-
-## Build and verify
-
-The offline demo embeds its charts, sample data, and typeface. The local server uses the Python standard library.
+For a single file you can open offline, run the preview builder or download `retail-forecaster-offline` from a successful [CI run](https://github.com/capmeowstr/retail-forecaster/actions).
 
 ```sh
-python3 make_preview.py Retail_Forecaster_Demo.html
-python3 -m unittest test_browser_parity
-node --test test_reorder.js test_replay.js
+python3 -m scripts.make_preview Retail_Forecaster_Demo.html
 ```
 
-The UCI sample is adapted under CC BY 4.0. Instrument Sans is distributed under the SIL Open Font License. [Dataset credit](docs/methodology.md#data-and-licensing) · [Font license](web/fonts/OFL-Instrument-Sans.txt)
+Run the tests with Node.js 20 or later installed.
+
+```sh
+python3 -m unittest discover -s tests
+npm test
+```
+
+## How it works
+
+[forecast.py](forecast.py) is the reference implementation for the CLI and local server. [web/forecast-engine.js](web/forecast-engine.js) runs the same models on CSV uploads in the standalone browser, where Python is unavailable.
+The parity suite checks report structure and compares floats with absolute and relative tolerances of `1e-12`.
+The order draft uses forecast demand, stock, fixed lead time, and pack size. The replay uses the same observed sales and inventory settings for each plan. [Models, formulas and evaluation](docs/methodology.md)
+
+![Inventory replay for the UCI sample with a simulated daily stock chart and outcomes for both plans](docs/inventory-replay.png)
+
+At 15,276 units ordered per plan, the selected model missed 608 fewer units in the later 14-day replay. In the 28-day replay it missed 534 more. [Replay settings and results](docs/methodology.md#recorded-sales-replay)
+
+## Assumptions and limitations
+
+- The UCI sample is a public test fixture from one retailer. Wholesale orders can inflate daily totals. The preparation script drops cancellations and negative quantities, so returns do not replenish stock.
+- Recorded sales are a censored proxy for demand during real stockouts. The dataset has no stock or lost-sales log. The replay simulates both.
+- Lead time is fixed for each scenario. Each plan gets one receipt before sales on the delivery date. The model has no purchase costs, promotions, or existing open orders.
+- The demand sensitivity band shows the effect of adding or subtracting the SKU's holdout MAE each day. It has no probability coverage guarantee.
+
+## Repository layout
+
+| Path | Contents |
+| --- | --- |
+| `forecast.py`, `serve.py` | Forecast CLI, reference model, and local server |
+| `web/` | Browser dashboard, CSV tools, stock planning and replay |
+| `scripts/` | Sample preparation and preview builders |
+| `tests/` | Python/browser parity, reorder and replay tests, evaluation fixture |
+| `sample-data/` | UCI daily sales fixture |
+| `docs/` | Methodology and browser captures, including the [delay walkthrough](docs/delivery-delay.gif) |
+
+The code is [MIT-licensed](LICENSE). The adapted UCI sample is [CC BY 4.0](docs/methodology.md#data-and-license).
