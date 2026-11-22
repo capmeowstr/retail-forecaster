@@ -1,6 +1,6 @@
 "use strict";
 
-function createBalancePlot(canvas, caption, formatShortDate) {
+function createBalancePlot(canvas, caption, formatShortDate, onInspect = () => {}) {
   const compact = new Intl.NumberFormat("en-SG", { notation: "compact", maximumFractionDigits: 1 });
   let chart = null;
   let selected = null;
@@ -21,8 +21,9 @@ function createBalancePlot(canvas, caption, formatShortDate) {
     ctx.textBaseline = "middle";
     plot = null;
     if (!chart?.dates.length) return;
-    const { dates, opening, lines, lead, delay = 0, references = [], band, shortages } = chart;
-    const left = 40, right = width - 12, top = 29, bottom = height - 24;
+    const { dates, opening, lines, lead, delay = 0, references = [], band, shortages, demand } = chart;
+    const left = 47, right = width - 12, top = 29, bottom = height - (demand ? 61 : 24);
+    const dateAxis = height - 9;
     const step = (right - left) / dates.length;
     const x = i => left + i * step;
     const peak = Math.max(1, opening, ...references.map(ref => ref.value), ...(band?.high ?? []),
@@ -60,7 +61,8 @@ function createBalancePlot(canvas, caption, formatShortDate) {
     }
     if (selected !== null) {
       ctx.fillStyle = color("focus");
-      ctx.fillRect(x(selected), top, step, bottom - top);
+      ctx.fillRect(x(selected), top, step, dateAxis - 15 - top);
+      line(x(selected + .5), top, x(selected + .5), dateAxis - 15, color("axis"));
     }
 
     ctx.textAlign = "right";
@@ -110,11 +112,24 @@ function createBalancePlot(canvas, caption, formatShortDate) {
         ctx.fillRect(x(selected + 1) - 3, marker - 3, 6, 6);
       }
     }
+    if (demand) {
+      const base = dateAxis - 15;
+      const maxDemand = Math.max(1, ...demand);
+      line(left, base, right, base, color("grid"));
+      ctx.fillStyle = color("axis");
+      ctx.textAlign = "right";
+      ctx.fillText("Demand", left - 5, base - 10);
+      demand.forEach((units, index) => {
+        const height = (units / maxDemand) * 27;
+        ctx.fillStyle = color(index === selected ? "primary" : "demand");
+        ctx.fillRect(x(index) + step * .19, base - height, step * .62, height);
+      });
+    }
     ctx.fillStyle = color("axis");
     ctx.textAlign = "left";
-    ctx.fillText(formatShortDate(dates[0]), left, bottom + 14);
+    ctx.fillText(formatShortDate(dates[0]), left, dateAxis);
     ctx.textAlign = "right";
-    ctx.fillText(formatShortDate(dates.at(-1)), right, bottom + 14);
+    ctx.fillText(formatShortDate(dates.at(-1)), right, dateAxis);
   }
 
   function select(index) {
@@ -122,6 +137,7 @@ function createBalancePlot(canvas, caption, formatShortDate) {
     selected = index;
     caption.textContent = index === null ? chart.summary : chart.readDay(index);
     draw();
+    onInspect(index);
   }
 
   function selectPointer(event) {
@@ -140,12 +156,16 @@ function createBalancePlot(canvas, caption, formatShortDate) {
     select(event.key === "Escape" ? null : Math.min(chart.dates.length - 1, Math.max(0, (selected ?? -direction) + direction)));
   });
   new ResizeObserver(draw).observe(canvas);
-  return next => {
-    chart = next;
-    selected = next?.focusIndex >= 0 ? next.focusIndex : null;
-    canvas.tabIndex = next?.dates.length ? 0 : -1;
-    caption.textContent = selected === null ? next?.summary ?? "Opening stock is required." : next.readDay(selected);
-    draw();
+  return {
+    show(next) {
+      chart = next;
+      selected = next?.focusIndex >= 0 ? next.focusIndex : null;
+      canvas.tabIndex = next?.dates.length ? 0 : -1;
+      caption.textContent = selected === null ? next?.summary ?? "Opening stock is required." : next.readDay(selected);
+      draw();
+      onInspect(selected);
+    },
+    inspect: select,
   };
 }
 
@@ -169,17 +189,83 @@ function stockReferences(row) {
   return refs;
 }
 
+function createStockTape({ formatDate, formatShortDate, formatNumber, onChoose }) {
+  const body = document.getElementById("stock-tape-rows");
+  const buttons = document.querySelectorAll(".tape-filters button");
+  let lines = [];
+  let mode = "events";
+  let active = null;
+  let visibleRows = [];
+
+  function highlight(index) {
+    active = index;
+    for (const [day, row, button] of visibleRows) {
+      row.dataset.selected = String(day === index);
+      button.setAttribute("aria-pressed", String(day === index));
+    }
+  }
+
+  function render() {
+    body.replaceChildren();
+    visibleRows = [];
+    lines.forEach(({ date, demand, receipt, balance, short }, index) => {
+      if (mode === "events" && !receipt && !(short > 1e-9)) return;
+      const row = body.insertRow();
+      row.dataset.kind = short > 1e-9 ? "short" : receipt > 0 ? "receipt" : "regular";
+      const cell = row.insertCell();
+      const inspect = document.createElement("button");
+      inspect.type = "button";
+      inspect.className = "tape-date";
+      inspect.textContent = formatShortDate(date);
+      inspect.setAttribute("aria-label", "Inspect " + formatDate(date));
+      inspect.addEventListener("click", () => onChoose(index));
+      cell.append(inspect);
+      row.insertCell().textContent = formatNumber(demand);
+      row.insertCell().textContent = receipt ? "+" + formatNumber(receipt) : "—";
+      row.insertCell().textContent = balance === null ? "—" : formatNumber(balance);
+      row.insertCell().textContent = short === null ? "—" : formatNumber(short > 1e-9 ? short : 0);
+      visibleRows.push([index, row, inspect]);
+    });
+    if (!visibleRows.length) {
+      const cell = body.insertRow().insertCell();
+      cell.colSpan = 5;
+      cell.className = "empty-cell";
+      cell.textContent = lines.length ? "No receipts or shortages in this window." : "Opening stock is required.";
+    }
+    highlight(active);
+  }
+
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      mode = button.dataset.tape;
+      for (const sibling of buttons) sibling.setAttribute("aria-pressed", String(sibling === button));
+      render();
+    });
+  }
+  return {
+    show(next) {
+      lines = next;
+      active = null;
+      for (const button of buttons) button.disabled = !lines.length;
+      render();
+    },
+    highlight,
+  };
+}
+
 function createStockChart({ formatDate, formatShortDate, formatNumber }) {
   const canvas = document.getElementById("stock-chart");
   const caption = document.getElementById("stock-caption");
   const legend = document.getElementById("stock-legend");
-  const plot = createBalancePlot(canvas, caption, formatShortDate);
+  const tape = createStockTape({ formatDate, formatShortDate, formatNumber, onChoose: index => plot.inspect(index) });
+  const plot = createBalancePlot(canvas, caption, formatShortDate, tape.highlight);
   return {
     show(row, forecast, dates, error, focusDate) {
       const usable = row?.stock?.onHand != null && row.status !== "unavailable";
       legend.hidden = !usable;
       if (!usable) {
-        plot(null);
+        tape.show([]);
+        plot.show(null);
         return;
       }
       const projection = forecast.slice(0, row.requiredDays);
@@ -204,7 +290,12 @@ function createStockChart({ formatDate, formatShortDate, formatNumber }) {
         row.orderUnits === null ? "Draft unavailable" : "",
         band ? "Sensitivity ±" + formatNumber(error) + " units/day (holdout MAE)" : "",
       ].filter(Boolean).join(" · ");
-      plot({ dates, opening, lines, lead, delay, references: stockReferences(row), band, summary, focusIndex: dates.indexOf(focusDate),
+      tape.show(draft.map(({ demand, receipt, balance, missed }, index) => {
+        const known = row.orderUnits !== null || index < lead;
+        return { date: dates[index], demand, receipt, balance: known ? balance : null, short: known ? missed : null };
+      }));
+      plot.show({ dates, opening, lines, lead, delay, demand: projection, references: stockReferences(row),
+        band, summary, focusIndex: dates.indexOf(focusDate),
         shortages: draft.map((day, i) => i < lead && day.missed > 1e-9),
         readDay(index) {
           const day = draft[index];

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f1efe6">
+  <meta name="theme-color" content="#0c1321">
   <title>Retail Forecaster</title>
   <link rel="stylesheet" href="/styles.css">
   <script defer src="/csv.js"></script>
@@ -64,7 +64,7 @@ store-a:item-123,2026-11-02,0</code></pre>
     <section class="panel reorder-board" id="reorder-board" aria-labelledby="reorder-heading">
       <div class="reorder-heading">
         <div>
-          <h2 id="reorder-heading">Dispatch board</h2>
+          <h2 id="reorder-heading">Inventory desk</h2>
           <p class="subtext" id="reorder-start">Run a sales forecast to begin.</p>
         </div>
         <div class="reorder-actions">
@@ -134,23 +134,14 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03,10</code></pre>
 
       <div class="reorder-workspace">
         <div class="reorder-list">
-          <section class="risk-calendar" aria-labelledby="risk-calendar-heading" id="reorder-calendar" hidden>
-            <div class="calendar-heading">
-              <div>
-                <h3 id="risk-calendar-heading">Shortage runway</h3>
-                <p class="subtext" id="reorder-calendar-summary">First projected shortage before delivery</p>
-              </div>
-              <button class="button button-text calendar-clear" id="reorder-clear-date" type="button" hidden>Clear date</button>
-            </div>
-            <div class="calendar-days" id="reorder-calendar-days"></div>
-          </section>
           <div class="queue-toolbar">
-            <h3>Reorder queue</h3>
+            <h3>SKU watchlist</h3>
             <button class="button button-text stock-jump" id="reorder-inspect" type="button" disabled>Inspect selected SKU</button>
             <div class="reorder-controls">
               <label for="reorder-search">
                 <span class="field-heading">Find SKU</span>
-                <input id="reorder-search" type="search" placeholder="Item or supplier">
+                <input id="reorder-search" type="search" placeholder="Item or supplier" aria-keyshortcuts="/">
+                <kbd aria-hidden="true">/</kbd>
               </label>
               <label for="reorder-filter">
                 <span class="field-heading">Show</span>
@@ -159,13 +150,22 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03,10</code></pre>
                   <option value="action">Needs action</option>
                   <option value="covered">Covered</option>
                   <option value="needs-data">Needs data</option>
+                  <option value="pinned">Pinned SKUs</option>
+                </select>
+              </label>
+              <label for="reorder-sort">
+                <span class="field-heading">Sort</span>
+                <select id="reorder-sort">
+                  <option value="urgency">Urgency</option>
+                  <option value="order">Largest draft</option>
+                  <option value="shortfall">Largest shortage</option>
                 </select>
               </label>
             </div>
           </div>
           <div class="table-wrap reorder-table" id="reorder-items" tabindex="0" role="region" aria-label="Reorder recommendations">
             <table>
-              <thead><tr><th scope="col">Item</th><th scope="col">Action</th><th scope="col">Delivery</th><th scope="col">Order qty</th></tr></thead>
+              <thead><tr><th scope="col">SKU</th><th scope="col">Action</th><th scope="col" title="Expected receipt date">ETA</th><th scope="col" title="Draft units">Draft</th></tr></thead>
               <tbody id="reorder-rows"><tr><td colspan="4" class="empty-cell">Run a forecast to see your items.</td></tr></tbody>
             </table>
           </div>
@@ -176,73 +176,105 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03,10</code></pre>
               <button type="button" class="button button-outline" id="reorder-next" aria-controls="reorder-rows" disabled>Next</button>
             </div>
           </div>
+          <section class="risk-calendar" aria-labelledby="risk-calendar-heading" id="reorder-calendar" hidden>
+            <div class="calendar-heading">
+              <div>
+                <h3 id="risk-calendar-heading">Shortage runway</h3>
+                <p class="subtext" id="reorder-calendar-summary">First projected shortage before delivery</p>
+              </div>
+              <button class="button button-text calendar-clear" id="reorder-clear-date" type="button" hidden>Clear date</button>
+            </div>
+            <div class="calendar-days" id="reorder-calendar-days"></div>
+          </section>
         </div>
 
         <section class="reorder-item" aria-labelledby="reorder-item-heading">
-          <div class="stock-console">
-            <div class="item-heading">
-              <div>
-                <h3 id="reorder-item-heading" tabindex="-1">Stock timeline</h3>
-                <p class="subtext" id="reorder-selected">Choose an item</p>
-                <p class="subtext" id="reorder-supplier"></p>
+          <div class="stock-main">
+            <div class="stock-console">
+              <div class="item-heading">
+                <div>
+                  <h3 id="reorder-item-heading" tabindex="-1">Stock timeline</h3>
+                  <p class="subtext" id="reorder-selected">Choose an item</p>
+                  <p class="subtext" id="reorder-supplier"></p>
+                </div>
+                <div class="item-actions">
+                  <span class="plan-status" id="reorder-selected-status" hidden></span>
+                  <button class="button pin-button" id="reorder-pin" type="button" aria-pressed="false" disabled>Pin SKU</button>
+                </div>
               </div>
-              <span class="plan-status" id="reorder-selected-status" hidden></span>
+              <figure class="stock-figure" aria-labelledby="reorder-item-heading">
+                <div class="stock-legend" id="stock-legend" aria-hidden="true">
+                  <span><i></i>With draft</span>
+                  <span><i></i>Opening stock only</span>
+                  <span class="legend-risk"><i></i>Shortfall</span>
+                  <span class="legend-delay" hidden><i></i>Delay window</span>
+                  <span class="legend-band" hidden><i></i>Demand sensitivity</span>
+                </div>
+                <canvas id="stock-chart" tabindex="0" role="img" aria-label="Projected stock by day" aria-describedby="stock-caption stock-keyboard" aria-keyshortcuts="ArrowLeft ArrowRight Escape"></canvas>
+                <figcaption id="stock-caption" class="subtext" aria-live="polite"></figcaption>
+              </figure>
             </div>
-            <figure class="stock-figure" aria-labelledby="reorder-item-heading">
-              <div class="stock-legend" id="stock-legend" aria-hidden="true">
-                <span><i></i>With draft</span>
-                <span><i></i>Opening stock only</span>
-                <span class="legend-risk"><i></i>Shortfall</span>
-                <span class="legend-delay" hidden><i></i>Delay window</span>
-                <span class="legend-band" hidden><i></i>Demand sensitivity</span>
+            <section class="stock-tape" aria-labelledby="tape-heading">
+              <div class="tape-header">
+                <h3 id="tape-heading">Stock tape</h3>
+                <div class="tape-filters" role="group" aria-label="Stock tape rows">
+                  <button type="button" data-tape="events" aria-pressed="true">Events</button>
+                  <button type="button" data-tape="all" aria-pressed="false">All days</button>
+                </div>
               </div>
-              <canvas id="stock-chart" tabindex="0" role="img" aria-label="Projected stock by day" aria-describedby="stock-caption stock-keyboard" aria-keyshortcuts="ArrowLeft ArrowRight Escape"></canvas>
-              <figcaption id="stock-caption" class="subtext" aria-live="polite"></figcaption>
-            </figure>
-          </div>
-          <div class="order-ticket">
-            <h3>Order ticket</h3>
-            <dl class="ticket-facts" id="reorder-ticket" hidden>
-              <div><dt>Supplier receipt</dt><dd><span id="reorder-ticket-arrival"></span><small id="reorder-ticket-arrival-before" class="ticket-before"></small></dd></div>
-              <div><dt>Draft quantity</dt><dd><span id="reorder-ticket-qty"></span><small id="reorder-ticket-qty-before" class="ticket-before"></small></dd></div>
-              <div><dt>Short before receipt</dt><dd><span id="reorder-ticket-short"></span><small id="reorder-ticket-short-before" class="ticket-before"></small></dd></div>
-            </dl>
-            <div class="reorder-detail" id="reorder-detail" role="status"></div>
-          </div>
-          <button type="button" class="button button-text stock-back" id="reorder-back">Back to items</button>
-          <details class="stock-settings" id="stock-settings">
-            <summary>Item settings</summary>
-            <form class="reorder-form" id="reorder-form" aria-label="Selected item settings">
-              <div class="reorder-fields">
-                <label for="reorder-on-hand">
-                  <span class="field-heading">Units on hand</span>
-                  <input id="reorder-on-hand" type="number" min="0" step="1" inputmode="numeric" placeholder="Missing" disabled>
-                </label>
-                <label for="reorder-lead">
-                  <span class="field-heading">Lead time (days)</span>
-                  <input id="reorder-lead" type="number" min="0" step="1" inputmode="numeric" placeholder="0" required disabled>
-                </label>
-                <label for="reorder-cover">
-                  <span class="field-heading">Coverage (days)</span>
-                  <input id="reorder-cover" type="number" min="1" step="1" inputmode="numeric" placeholder="7" required disabled>
-                </label>
-                <label for="reorder-pack">
-                  <span class="field-heading">Units per pack</span>
-                  <input id="reorder-pack" type="number" min="1" step="1" inputmode="numeric" placeholder="1" required disabled>
-                </label>
-                <label for="reorder-safety">
-                  <span class="field-heading">Safety stock reference</span>
-                  <input id="reorder-safety" type="number" min="0" step="1" inputmode="numeric" placeholder="0" disabled>
-                </label>
+              <div class="table-wrap tape-table" tabindex="0" role="region" aria-labelledby="tape-heading">
+                <table>
+                  <thead><tr><th scope="col">Date</th><th scope="col">Demand</th><th scope="col">Receipt</th><th scope="col" title="Projected closing stock with draft">Close</th><th scope="col">Short</th></tr></thead>
+                  <tbody id="stock-tape-rows"><tr><td colspan="5" class="empty-cell">Opening stock is required.</td></tr></tbody>
+                </table>
               </div>
-              <button type="submit" class="button button-outline" id="reorder-save" disabled>Save settings</button>
-            </form>
-          </details>
-          <details class="item-evidence">
-            <summary>Forecast assumptions</summary>
-            <p class="subtext">Safety stock and reorder point are chart references. Draft quantities use coverage and pack size.</p>
-            <p class="subtext reorder-item-evidence" id="reorder-item-evidence"></p>
-          </details>
+            </section>
+            <button type="button" class="button button-text stock-back" id="reorder-back">Back to items</button>
+          </div>
+          <aside class="order-dock" aria-labelledby="order-ticket-heading">
+            <div class="order-ticket">
+              <h3 id="order-ticket-heading">Order ticket</h3>
+              <dl class="ticket-facts" id="reorder-ticket" hidden>
+                <div><dt>Supplier receipt</dt><dd><span id="reorder-ticket-arrival"></span><small id="reorder-ticket-arrival-before" class="ticket-before"></small></dd></div>
+                <div><dt>Draft quantity</dt><dd><span id="reorder-ticket-qty"></span><small id="reorder-ticket-qty-before" class="ticket-before"></small></dd></div>
+                <div><dt>Short before receipt</dt><dd><span id="reorder-ticket-short"></span><small id="reorder-ticket-short-before" class="ticket-before"></small></dd></div>
+              </dl>
+              <div class="reorder-detail" id="reorder-detail" role="status"></div>
+            </div>
+            <details class="stock-settings" id="stock-settings">
+              <summary>Item settings</summary>
+              <form class="reorder-form" id="reorder-form" aria-label="Selected item settings">
+                <div class="reorder-fields">
+                  <label for="reorder-on-hand">
+                    <span class="field-heading">Units on hand</span>
+                    <input id="reorder-on-hand" type="number" min="0" step="1" inputmode="numeric" placeholder="Missing" disabled>
+                  </label>
+                  <label for="reorder-lead">
+                    <span class="field-heading">Lead time (days)</span>
+                    <input id="reorder-lead" type="number" min="0" step="1" inputmode="numeric" placeholder="0" required disabled>
+                  </label>
+                  <label for="reorder-cover">
+                    <span class="field-heading">Coverage (days)</span>
+                    <input id="reorder-cover" type="number" min="1" step="1" inputmode="numeric" placeholder="7" required disabled>
+                  </label>
+                  <label for="reorder-pack">
+                    <span class="field-heading">Units per pack</span>
+                    <input id="reorder-pack" type="number" min="1" step="1" inputmode="numeric" placeholder="1" required disabled>
+                  </label>
+                  <label for="reorder-safety">
+                    <span class="field-heading">Safety stock reference</span>
+                    <input id="reorder-safety" type="number" min="0" step="1" inputmode="numeric" placeholder="0" disabled>
+                  </label>
+                </div>
+                <button type="submit" class="button button-outline" id="reorder-save" disabled>Save settings</button>
+              </form>
+            </details>
+            <details class="item-evidence">
+              <summary>Forecast assumptions</summary>
+              <p class="subtext">Safety stock and reorder point are chart references. Draft quantities use coverage and pack size.</p>
+              <p class="subtext reorder-item-evidence" id="reorder-item-evidence"></p>
+            </details>
+          </aside>
         </section>
       </div>
     </section>

@@ -7,12 +7,13 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     "page", "previous", "next", "selected", "form", "on-hand", "lead", "cover",
     "pack", "safety", "save", "detail", "item-evidence", "selected-status", "stock-count",
     "calendar", "calendar-days", "calendar-summary", "clear-date", "items", "item-heading", "back",
-    "supplier", "inspect", "ticket", "ticket-arrival", "ticket-qty", "ticket-short",
+    "supplier", "inspect", "pin", "sort", "ticket", "ticket-arrival", "ticket-qty", "ticket-short",
     "ticket-arrival-before", "ticket-qty-before", "ticket-short-before",
   ].map(id => [id, document.getElementById("reorder-" + id)]));
   const stockChart = createStockChart({ formatDate, formatShortDate, formatNumber });
   const stockSettings = document.getElementById("stock-settings");
   const scenarioButtons = document.querySelectorAll(".scenario-steps button");
+  const board = document.getElementById("reorder-board");
   const singleColumn = window.matchMedia("(max-width: 849px)");
   const actions = {
     expedite: "Expedite",
@@ -42,6 +43,7 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
   let page = 0;
   let shortageDate = null;
   let visibleItems = [];
+  const pins = new Set();
 
   const words = (count, name) => formatNumber(count) + " " + name + (count === 1 ? "" : "s");
   const isAction = row => row.status === "expedite" || row.status === "order";
@@ -49,7 +51,8 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
   const matchesFilter = (row, filter) => filter === "all" ||
     (filter === "action" && isAction(row)) ||
     (filter === "covered" && row.status === "covered") ||
-    (filter === "needs-data" && (needsLongerForecast(row) || (!isAction(row) && row.status !== "covered")));
+    (filter === "needs-data" && (needsLongerForecast(row) || (!isAction(row) && row.status !== "covered"))) ||
+    (filter === "pinned" && pins.has(row.id));
 
   function shortfallText(row) {
     const minimum = row.effectiveLeadDays > data.forecast_dates.length ? "at least " : "";
@@ -72,10 +75,10 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
   function rowNote(row) {
     if (row.status === "expedite") {
       return shortfallText(row) + " short before arrival" +
-        (row.firstShortageDate ? " · " + formatDate(row.firstShortageDate) : "");
+        (row.firstShortageDate ? " · " + formatShortDate(row.firstShortageDate) : "");
     }
     if (row.status === "order" && row.firstShortageDate) {
-      return "Short without an order " + formatDate(row.firstShortageDate);
+      return "Short without draft " + formatShortDate(row.firstShortageDate);
     }
     if (row.status === "horizon") return "Needs " + words(row.requiredDays, "day");
     return "";
@@ -154,6 +157,8 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
       (!shortageDate || row.status === "expedite" && row.firstShortageDate === shortageDate) &&
       (!query || row.id.toLocaleLowerCase().includes(query) ||
         row.stock?.supplier.toLocaleLowerCase().includes(query)));
+    const sortKey = { order: "orderUnits", shortfall: "preArrivalShortfall" }[ui.sort.value];
+    if (sortKey) matches.sort((first, second) => (second[sortKey] ?? -1) - (first[sortKey] ?? -1));
     const lastPage = Math.max(0, Math.ceil(matches.length / pageSize) - 1);
     page = Math.min(page, lastPage);
     const start = page * pageSize;
@@ -169,7 +174,9 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
       const cell = ui.rows.insertRow().insertCell();
       cell.colSpan = 4;
       cell.className = "empty-cell";
-      cell.textContent = data ? "No items match these filters." : "Load sales history to plan orders.";
+      cell.textContent = !data ? "Load sales history to plan orders."
+        : filter === "pinned" && !pins.size ? "Select a SKU and pin it to build your watchlist."
+        : "No items match these filters.";
       return;
     }
 
@@ -180,6 +187,7 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
       button.type = "button";
       button.className = "plan-item";
       button.textContent = row.id;
+      button.dataset.pinned = String(pins.has(row.id));
       button.addEventListener("click", () => {
         onSelect(row.id);
         if (singleColumn.matches) focusStock();
@@ -190,15 +198,15 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
       const badge = addCellText(action, actions[row.status], "plan-status");
       badge.dataset.status = row.status;
       addCellText(action, rowNote(row), "plan-note");
-      tr.insertCell().textContent = row.arrivalDate ? formatDate(row.arrivalDate) : "—";
+      tr.insertCell().textContent = row.arrivalDate ? formatShortDate(row.arrivalDate) : "—";
       const quantity = tr.insertCell();
       if (row.orderUnits > 0) {
-        addCellText(quantity, unitsText(row.orderUnits), "plan-quantity");
+        addCellText(quantity, formatNumber(row.orderUnits), "plan-quantity");
         addCellText(quantity, words(row.orderPacks, "pack"), "plan-note");
       } else if (row.status === "expedite" && needsLongerForecast(row)) {
-        quantity.textContent = "Needs " + words(row.requiredDays, "day");
+        quantity.textContent = "Pending";
       } else {
-        quantity.textContent = row.orderUnits === 0 ? "0 units" : "—";
+        quantity.textContent = row.orderUnits === 0 ? "0" : "—";
       }
       visibleItems.push([row.id, tr, button]);
     }
@@ -235,6 +243,8 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     stockChart.show(row, forecast, data?.forecast_dates ?? [], error, shortageDate);
     renderTicket(row);
     ui.inspect.disabled = !row;
+    ui.pin.disabled = !row;
+    ui.pin.setAttribute("aria-pressed", String(pins.has(selectedId)));
     ui["selected-status"].hidden = !row;
     ui["selected-status"].textContent = row ? actions[row.status] : "";
     ui["selected-status"].dataset.status = row?.status ?? "";
@@ -351,6 +361,7 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     ui.file.disabled = true;
     ui.template.disabled = true;
     if (changedSource) {
+      pins.clear();
       inventory = null;
       inventoryName = "";
       importRequest = null;
@@ -358,6 +369,7 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
       shortageDate = null;
       ui.delay.value = "0";
       ui.filter.value = "all";
+      ui.sort.value = "urgency";
       ui.search.value = "";
       setError("");
     }
@@ -426,6 +438,18 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     ui["item-heading"].scrollIntoView({ block: "start" });
   }
   ui.inspect.addEventListener("click", focusStock);
+  ui.pin.addEventListener("click", () => {
+    if (selectedId === null) return;
+    if (!pins.delete(selectedId)) pins.add(selectedId);
+    ui.pin.setAttribute("aria-pressed", String(pins.has(selectedId)));
+    renderRows();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key !== "/" || event.ctrlKey || event.altKey || event.metaKey || board.hidden ||
+        event.target.closest?.("input, textarea, select, [contenteditable]")) return;
+    event.preventDefault();
+    ui.search.focus();
+  });
   ui.back.addEventListener("click", () => {
     const item = visibleItems.find(([id]) => id === selectedId);
     (item?.[2] ?? ui.items).focus();
@@ -481,7 +505,7 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     renderDecision();
     ui["calendar-days"].querySelector('[data-date="' + date + '"]')?.focus({ preventScroll: true });
   });
-  for (const [node, event] of [[ui.filter, "change"], [ui.search, "input"]]) {
+  for (const [node, event] of [[ui.filter, "change"], [ui.sort, "change"], [ui.search, "input"]]) {
     node.addEventListener(event, () => {
       page = 0;
       renderRows();

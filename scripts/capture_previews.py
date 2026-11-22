@@ -20,13 +20,14 @@ def indexed_png(data):
 def capture(page, docs):
     expect(page.locator("#reorder-order-units")).to_have_text("264")
     page.mouse.move(2, 2)
-    item = page.locator(".reorder-item")
+    item = page.locator(".stock-console")
     before = indexed_png(item.screenshot(animations="disabled"))
     page.get_by_role("button", name="Two days late").click()
     expect(page.locator("#reorder-order-units")).to_have_text("342")
     after = indexed_png(item.screenshot(animations="disabled"))
     before.save(docs / "delivery-delay.gif", save_all=True, append_images=[after],
                 duration=[2200, 2200], loop=0, optimize=True)
+    page.get_by_role("button", name="Pin SKU").click()
     page.evaluate("window.scrollTo(0, 0)")
     indexed_png(page.screenshot(animations="disabled", full_page=True)).save(docs / "reorder-workspace.png", optimize=True)
 
@@ -48,7 +49,7 @@ def main():
         demo.write_text(build_preview(), encoding="utf-8")
         browser = playwright.chromium.launch(executable_path=args.chromium, args=["--disable-gpu", "--no-zygote"])
         try:
-            page = browser.new_page(viewport={"width": 1360, "height": 910}, offline=True)
+            page = browser.new_page(viewport={"width": 1440, "height": 930}, offline=True)
             page.goto(demo.as_uri())
             capture(page, WEB.parent / "docs")
         finally:

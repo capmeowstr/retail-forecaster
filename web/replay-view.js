@@ -23,7 +23,7 @@ function createReplayView({ dateRange, formatDate, formatShortDate, formatNumber
     ui.summary.textContent = "";
     ui.visuals.hidden = true;
     ui.stock.hidden = true;
-    plot(null);
+    plot.show(null);
     ui.visuals.replaceChildren();
     ui.impact.hidden = true;
     ui["impact-rows"].replaceChildren();
@@ -131,7 +131,7 @@ function createReplayView({ dateRange, formatDate, formatShortDate, formatNumber
     const { dates, rows, selectedStock, baselineStock } = replay;
     const opening = rows.reduce((sum, row) => sum + row.openingStock, 0);
     ui.stock.hidden = false;
-    plot({
+    plot.show({
       dates, opening, lead: settings.leadDays,
       lines: [
         { days: baselineStock, dashed: true },
