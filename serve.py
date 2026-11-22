@@ -17,7 +17,6 @@ RETAIL_SAMPLE = WEB.parent / "sample-data" / "uci-retail.csv"
 ASSETS = {
     "/": ("index.html", "text/html"),
     "/styles.css": ("styles.css", "text/css"),
-    "/fonts/instrument-sans.woff2": ("fonts/instrument-sans.woff2", "font/woff2"),
     "/csv.js": ("csv.js", "text/javascript"),
     "/stock-chart.js": ("stock-chart.js", "text/javascript"),
     "/reorder.js": ("reorder.js", "text/javascript"),

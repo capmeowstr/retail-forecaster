@@ -1,7 +1,6 @@
 """Package the dashboard and its offline forecast engine as one HTML file."""
 
 import argparse
-import base64
 import io
 import json
 from pathlib import Path
@@ -36,10 +35,8 @@ def build_preview():
 
     markup = (WEB / "index.html").read_text(encoding="utf-8")
     styles = (WEB / "styles.css").read_text(encoding="utf-8")
-    font = base64.b64encode((WEB / "fonts/instrument-sans.woff2").read_bytes()).decode("ascii")
-    styles = styles.replace("/fonts/instrument-sans.woff2", "data:font/woff2;base64," + font)
-    font_license = (WEB / "fonts/OFL-Instrument-Sans.txt").read_text(encoding="utf-8").strip()
-    styles = "/*\n" + font_license + "\n*/\n" + styles
+    license_text = (WEB.parent / "LICENSE").read_text(encoding="utf-8")
+    markup = markup.replace("<!doctype html>", "<!doctype html>\n<!--\n" + license_text + "-->")
     scripts = []
     for filename, element_id in SCRIPTS:
         markup = markup.replace(f'  <script defer src="/{filename}"></script>\n', "")

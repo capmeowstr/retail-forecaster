@@ -5,7 +5,7 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     "start", "file", "export", "template", "import-status", "import-error",
     "delay", "scenario-impact", "filter", "search", "risk-count", "order-count", "order-units", "rows",
     "page", "previous", "next", "selected", "form", "on-hand", "lead", "cover",
-    "pack", "save", "detail", "item-evidence", "selected-status",
+    "pack", "safety", "save", "detail", "item-evidence", "selected-status", "stock-count",
     "calendar", "calendar-days", "calendar-summary", "clear-date", "items", "item-heading", "back",
   ].map(id => [id, document.getElementById("reorder-" + id)]));
   const stockChart = createStockChart({ formatDate, formatShortDate, formatNumber });
@@ -22,6 +22,7 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
   const defaultSettings = { onHand: null, leadDays: 0, coverDays: 7, packSize: 1, supplier: "" };
   const editableFields = [
     ["on-hand", "onHand", 0], ["lead", "leadDays", 0], ["cover", "coverDays", 1], ["pack", "packSize", 1],
+    ["safety", "safetyStock", 0],
   ];
   const pageSize = 40;
   let data = null;
@@ -30,6 +31,7 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
   let importRequest = null;
   let plan = [];
   let itemPlans = new Map();
+  let itemHoldout = new Map();
   let orders = [];
   let selectedId = null;
   let holdoutEvidence = "";
@@ -196,8 +198,11 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
 
   function renderDecision() {
     const row = itemPlans.get(selectedId);
-    const series = data?.series.find(item => item.id === selectedId);
-    stockChart.show(row, series?.forecast ?? [], data?.forecast_dates ?? []);
+    const forecast = data?.series.find(item => item.id === selectedId)?.forecast ?? [];
+    const score = itemHoldout.get(selectedId);
+    const error = score ? score.actual.reduce((total, value, index) =>
+      total + Math.abs(value - score.selected[index]), 0) / score.actual.length : 0;
+    stockChart.show(row, forecast, data?.forecast_dates ?? [], error);
     ui["selected-status"].hidden = !row;
     ui["selected-status"].textContent = row ? actions[row.status] : "";
     ui["selected-status"].dataset.status = row?.status ?? "";
@@ -240,7 +245,7 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     const stock = inventory?.get(selectedId) ?? defaultSettings;
     ui.selected.textContent = selectedId ?? "Choose a series";
     for (const [id, key] of editableFields) {
-      ui[id].value = selectedId === null ? "" : stock[key] ?? "";
+      ui[id].value = selectedId === null ? "" : stock[key] ?? (key === "safetyStock" ? 0 : "");
       ui[id].disabled = selectedId === null;
       ui[id].removeAttribute("aria-invalid");
     }
@@ -272,20 +277,22 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
     plan = data ? retailReorder.buildPlan(data.series, data.forecast_dates, inventory, delay) : [];
     itemPlans = new Map(plan.map(row => [row.id, row]));
     orders = plan.filter(row => row.orderUnits > 0);
-    ui["risk-count"].textContent = formatNumber(plan.filter(row => row.status === "expedite").length);
+    const riskCount = plan.filter(row => row.status === "expedite").length;
+    ui["risk-count"].textContent = data ? formatNumber(riskCount) : "—";
+    ui["risk-count"].dataset.risk = String(riskCount > 0);
     ui["order-count"].textContent = formatNumber(orders.length);
     const orderUnits = orders.reduce((total, row) => total + BigInt(row.orderUnits), 0n);
     ui["order-units"].textContent = formatNumber(orderUnits);
+    const stockCount = plan.filter(row => row.stock?.onHand != null).length;
+    ui["stock-count"].textContent = data ? formatNumber(stockCount) + "/" + formatNumber(plan.length) : "—";
     ui["scenario-impact"].textContent = describeDelay(delay);
     ui.export.disabled = !orders.length;
     ui.export.textContent = delay ? "Download scenario CSV" : "Download order draft";
     if (data) {
-      const counts = plan.filter(row => row.stock?.onHand != null).length;
-      const status = formatNumber(counts) + " of " + formatNumber(plan.length) + " items with opening stock";
       const unmatched = [...inventory.keys()].filter(id => !itemPlans.has(id)).length;
       const limited = plan.filter(needsLongerForecast).length;
       ui["import-status"].textContent = [
-        inventoryName, status, unmatched ? words(unmatched, "unmatched ID") : "",
+        inventoryName || "Opening inventory", unmatched ? words(unmatched, "unmatched ID") : "",
         limited ? words(limited, "item") + " beyond the forecast" : "",
       ]
         .filter(Boolean).join(" · ");
@@ -299,6 +306,7 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
 
   function clearForecast(changedSource) {
     data = null;
+    itemHoldout.clear();
     selectedId = null;
     holdoutEvidence = "";
     ui.start.textContent = "";
@@ -321,6 +329,7 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
 
   function showForecast(forecast, sampleLabel, id) {
     data = forecast;
+    itemHoldout = new Map((forecast.report.holdout?.replay ?? []).map(item => [item.id, item]));
     selectedId = id;
     if (inventory === null) {
       inventory = sampleLabel ? retailReorder.sampleInventory(data.series) : new Map();
@@ -390,6 +399,8 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
       const value = field.valueAsNumber;
       if (key === "onHand" && field.value === "" && !field.validity.badInput) {
         stock[key] = null;
+      } else if (key === "safetyStock" && field.value === "" && !field.validity.badInput) {
+        stock[key] = 0;
       } else if (Number.isSafeInteger(value) && value >= minimum) {
         stock[key] = value;
       } else {
@@ -431,8 +442,8 @@ function createReorderView({ onSelect, formatDate, formatShortDate, formatNumber
   ui.template.addEventListener("click", () => {
     if (!data) return;
     retailCsv.download("inventory-template.csv", [
-      "series_id,on_hand,lead_days,cover_days,pack_size,supplier,stock_date",
-      "item-123,50,2,7,12,Example Supplier," + data.forecast_dates[0],
+      "series_id,on_hand,lead_days,cover_days,pack_size,supplier,stock_date,safety_stock",
+      "item-123,50,2,7,12,Example Supplier," + data.forecast_dates[0] + ",10",
     ]);
   });
   ui.export.addEventListener("click", () => {

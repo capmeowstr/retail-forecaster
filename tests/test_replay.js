@@ -28,6 +28,9 @@ test("replay applies one receipt before its day's sales and measures the stock t
   assert.equal(result.selected.fillRate, 0.92);
   assert.equal(result.selected.endingStock, 2);
   assert.equal(result.baseline.endingStock, 8);
+  assert.deepEqual(Array.from(result.selectedStock, day => day.balance), [0, 14, 6, 2]);
+  assert.equal(result.baselineStock[1].receipt, 24);
+  assert.equal(result.selectedStock[0].missed, 2);
 });
 
 test("held-out sales cannot change the order or its simulated opening stock", () => {

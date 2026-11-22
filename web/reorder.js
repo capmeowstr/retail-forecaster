@@ -44,6 +44,7 @@ const retailReorder = (() => {
         leadDays: readWhole(read("lead_days"), "lead_days", line, 0, 0),
         coverDays: readWhole(read("cover_days"), "cover_days", line, 1, 7),
         packSize: readWhole(read("pack_size"), "pack_size", line, 1, 1),
+        safetyStock: readWhole(read("safety_stock"), "safety_stock", line, 0, 0),
         supplier: read("supplier"),
       });
     }
@@ -53,7 +54,7 @@ const retailReorder = (() => {
 
   function sampleInventory(series) {
     const examples = new Map([
-      ["demo-01", { onHand: 50, leadDays: 2, coverDays: 7, packSize: 12, supplier: "Harbour Wholesale" }],
+      ["demo-01", { onHand: 50, leadDays: 2, coverDays: 7, packSize: 12, safetyStock: 12, supplier: "Harbour Wholesale" }],
       ["demo-02", { onHand: 20, leadDays: 2, coverDays: 7, packSize: 12, supplier: "Harbour Wholesale" }],
       ["demo-03", { onHand: 240, leadDays: 3, coverDays: 7, packSize: 12, supplier: "Northline Supply" }],
     ]);

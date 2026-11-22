@@ -1,10 +1,11 @@
 "use strict";
 
-function createReplayView({ dateRange, formatDate, formatNumber, displayName }) {
+function createReplayView({ dateRange, formatDate, formatShortDate, formatNumber, displayName }) {
   const ui = Object.fromEntries([
     "controls", "opening", "lead", "pack", "group", "period", "model", "rows", "status", "export", "credit",
-    "summary", "impact", "impact-note", "impact-rows", "policy", "policy-note", "visuals",
+    "summary", "impact", "impact-note", "impact-rows", "policy", "policy-note", "visuals", "stock", "chart", "caption",
   ].map(id => [id, document.getElementById("replay-" + id)]));
+  const plot = createBalancePlot(ui.chart, ui.caption, formatShortDate);
   const sources = { demo: "Synthetic sales", retail: "UCI Online Retail · UK sales", upload: "Uploaded sales" };
   const metrics = [
     ["Units missed", "missed", -1],
@@ -21,6 +22,8 @@ function createReplayView({ dateRange, formatDate, formatNumber, displayName }) 
     ui.summary.hidden = true;
     ui.summary.textContent = "";
     ui.visuals.hidden = true;
+    ui.stock.hidden = true;
+    plot(null);
     ui.visuals.replaceChildren();
     ui.impact.hidden = true;
     ui["impact-rows"].replaceChildren();
@@ -124,6 +127,28 @@ function createReplayView({ dateRange, formatDate, formatNumber, displayName }) 
     ui.visuals.hidden = false;
   }
 
+  function renderStock() {
+    const { dates, rows, selectedStock, baselineStock } = replay;
+    const opening = rows.reduce((sum, row) => sum + row.openingStock, 0);
+    ui.stock.hidden = false;
+    plot({
+      dates, opening, lead: settings.leadDays,
+      lines: [
+        { days: baselineStock, color: "#5c6168", dashed: true },
+        { days: selectedStock, color: "#1e3a5f" },
+      ],
+      shortages: selectedStock.map((day, index) => day.missed > 0 || baselineStock[index].missed > 0),
+      summary: "Opening " + formatNumber(opening) + " units · All eligible SKUs",
+      readDay(index) {
+        const selected = selectedStock[index];
+        const weekly = baselineStock[index];
+        return formatDate(dates[index]) + " · Selected " + formatNumber(selected.balance) +
+          " left / " + formatNumber(selected.missed) + " missed · Weekly " + formatNumber(weekly.balance) +
+          " left / " + formatNumber(weekly.missed) + " missed";
+      },
+    });
+  }
+
   function renderImpact() {
     const items = replay.rows
       .map(({ id, selected, baseline }) => ({
@@ -186,6 +211,7 @@ function createReplayView({ dateRange, formatDate, formatNumber, displayName }) 
     }
     renderSummary();
     renderComparison();
+    renderStock();
     renderImpact();
     ui.rows.replaceChildren();
     for (const [label, key, direction] of metrics) {
@@ -211,7 +237,7 @@ function createReplayView({ dateRange, formatDate, formatNumber, displayName }) 
     const holdout = report.holdout;
     const conflictingResult = settings.group === "all" && holdout.selected.wape !== null && holdout.baseline.wape !== null &&
       holdout.selected.wape < holdout.baseline.wape && replay.selected.missed > replay.baseline.missed;
-    const conflict = conflictingResult ? "The selected forecast scored lower error and missed more units in this scenario." : "";
+    const conflict = conflictingResult ? "The selected plan missed more units despite lower forecast error." : "";
     ui.status.textContent = [
       formatNumber(replay.rows.length) + " items · Delivery " + formatDate(replay.arrival) + ".",
       tie, conflict, skipped,

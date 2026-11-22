@@ -48,7 +48,7 @@ const displayName = model => modelNames[model] ?? model;
 const formatDate = day => fullDate.format(dateValue(day));
 const formatShortDate = day => shortDate.format(dateValue(day));
 const dateRange = (first, last) => formatShortDate(first) + " – " + formatDate(last);
-const replayView = createReplayView({ dateRange, formatDate, formatNumber: numbers.format, displayName });
+const replayView = createReplayView({ dateRange, formatDate, formatShortDate, formatNumber: numbers.format, displayName });
 const reorderView = createReorderView({
   formatDate,
   formatShortDate,
@@ -65,14 +65,26 @@ const reorderView = createReorderView({
 
 const navLinks = document.querySelectorAll(".desk-nav a");
 function updateNavigation() {
-  const section = window.location.hash || "#reorder-board";
+  const section = [...navLinks].some(link => link.hash === location.hash) ? location.hash : "#reorder-board";
   for (const link of navLinks) {
-    if (link.hash === section || (section === "#top" && link.hash === "#reorder-board")) {
+    const active = link.hash === section;
+    document.getElementById(link.hash.slice(1)).hidden = !active;
+    if (active) {
       link.setAttribute("aria-current", "location");
     } else {
       link.removeAttribute("aria-current");
     }
   }
+  if (section === "#forecast-evidence") drawChart();
+}
+for (const link of navLinks) {
+  link.addEventListener("click", event => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    if (location.hash !== link.hash) history.pushState(null, "", link.hash);
+    updateNavigation();
+    window.scrollTo(0, 0);
+  });
 }
 window.addEventListener("hashchange", updateNavigation);
 updateNavigation();
@@ -251,12 +263,12 @@ function drawChart() {
   canvas.height = Math.round(height * scale);
   const context = canvas.getContext("2d");
   context.scale(scale, scale);
-  context.font = "11px system-ui, sans-serif";
+  context.font = "11px ui-monospace, monospace";
   context.textBaseline = "middle";
   context.lineJoin = "round";
 
   if (!result) {
-    context.fillStyle = "#586669";
+    context.fillStyle = "#5c6168";
     context.textAlign = "center";
     context.fillText(request ? "Reading sales history…" : "Forecast chart", width / 2, height / 2);
     return;
@@ -280,51 +292,51 @@ function drawChart() {
   const startDay = dateValue(result.cutoff) - (firstFuture - 1) * dayMs;
   chartFrame = { left, right, values };
 
-  context.fillStyle = "#e7f3ee";
+  context.fillStyle = "#f0f3f7";
   context.fillRect(boundary, top, right - boundary, bottom - top);
   context.lineWidth = 1;
   context.textAlign = "right";
   for (let tick = 0; tick <= 4; tick++) {
     const value = tick * step;
     const line = y(value);
-    context.strokeStyle = "#dfe6e3";
+    context.strokeStyle = "#ece9e2";
     context.beginPath();
     context.moveTo(left, line);
     context.lineTo(right, line);
     context.stroke();
-    context.fillStyle = "#586669";
+    context.fillStyle = "#5c6168";
     context.fillText(numbers.format(value), left - 7, line);
   }
   context.beginPath();
-  context.strokeStyle = "#a2bdb5";
+  context.strokeStyle = "#aaa69d";
   context.moveTo(boundary, top);
   context.lineTo(boundary, bottom);
   context.stroke();
 
-  context.fillStyle = "#586669";
+  context.fillStyle = "#5c6168";
   const ticks = width < 420 ? [0, firstFuture - 1, values.length - 1] :
     [0, Math.floor((firstFuture - 1) / 2), firstFuture - 1, values.length - 1];
   for (const index of new Set(ticks)) {
     context.textAlign = index === 0 ? "left" : index === values.length - 1 ? "right" : "center";
     context.fillText(shortDate.format(startDay + index * dayMs), x(index), bottom + 15);
   }
-  strokeSeries(context, item.history, x, y, 0, "#647782");
+  strokeSeries(context, item.history, x, y, 0, "#5c6168");
   if (item.history.length === 1) {
-    context.fillStyle = "#647782";
+    context.fillStyle = "#5c6168";
     context.beginPath();
     context.arc(x(0), y(item.history[0]), 2.5, 0, 2 * Math.PI);
     context.fill();
   }
-  strokeSeries(context, [item.history.at(-1), ...item.forecast], x, y, firstFuture - 1, "#157165", true);
+  strokeSeries(context, [item.history.at(-1), ...item.forecast], x, y, firstFuture - 1, "#1e3a5f", true);
   if (chartIndex !== null) {
     const value = values[chartIndex];
-    context.strokeStyle = "#718987";
+    context.strokeStyle = "#5c6168";
     context.lineWidth = 1;
     context.beginPath();
     context.moveTo(x(chartIndex), top);
     context.lineTo(x(chartIndex), bottom);
     context.stroke();
-    context.fillStyle = "#157165";
+    context.fillStyle = "#1e3a5f";
     context.beginPath();
     context.arc(x(chartIndex), y(value), 3.5, 0, 2 * Math.PI);
     context.fill();

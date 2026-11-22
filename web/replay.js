@@ -5,7 +5,7 @@ const retailReplay = (() => {
   const tolerance = 1e-9;
   const wholeDays = value => Number.isSafeInteger(value) && value >= 0;
 
-  function consume(actual, dates, openingStock, leadDays, orderedUnits) {
+  function consume(actual, dates, openingStock, leadDays, orderedUnits, track) {
     let stock = openingStock;
     let missed = 0;
     let missedDays = 0;
@@ -13,7 +13,8 @@ const retailReplay = (() => {
     let actualUnits = 0;
 
     actual.forEach((observed, day) => {
-      if (day === leadDays) stock += orderedUnits;
+      const receipt = day === leadDays ? orderedUnits : 0;
+      stock += receipt;
       const shortfall = Math.max(0, observed - stock);
       if (shortfall > tolerance) {
         missed += shortfall;
@@ -22,6 +23,9 @@ const retailReplay = (() => {
       }
       stock = Math.max(0, stock - observed);
       actualUnits += observed;
+      track[day].receipt += receipt;
+      track[day].balance += stock;
+      if (shortfall > tolerance) track[day].missed += shortfall;
     });
     return { actualUnits, missed, missedDays, firstMissedDate, endingStock: stock, orderedUnits };
   }
@@ -122,6 +126,9 @@ const retailReplay = (() => {
       selectedOrders = allocatePacks(eligible, selectedPlan, "selected", packSize, leadDays, packLimit);
       baselineOrders = allocatePacks(eligible, baselinePlan, "baseline", packSize, leadDays, packLimit);
     }
+    const track = () => dates.map(() => ({ receipt: 0, balance: 0, missed: 0 }));
+    const selectedStock = track();
+    const baselineStock = track();
     const rows = [];
     for (const item of eligible) {
       const selectedUnits = selectedOrders ? (selectedOrders.get(item.id) ?? 0) : selectedPlan.get(item.id).orderUnits;
@@ -129,12 +136,12 @@ const retailReplay = (() => {
       const stock = inventory.get(item.id).onHand;
       rows.push({
         id: item.id, group: item.group, openingStock: stock, trainingMean: item.training_daily_mean,
-        selected: consume(item.actual, dates, stock, leadDays, selectedUnits),
-        baseline: consume(item.actual, dates, stock, leadDays, baselineUnits),
+        selected: consume(item.actual, dates, stock, leadDays, selectedUnits, selectedStock),
+        baseline: consume(item.actual, dates, stock, leadDays, baselineUnits, baselineStock),
       });
     }
     return {
-      rows, dates, arrival: dates[leadDays], orderLimit, excludedCount: selectedSeries.length - rows.length,
+      rows, dates, selectedStock, baselineStock, arrival: dates[leadDays], orderLimit, excludedCount: selectedSeries.length - rows.length,
       selected: totals(rows, "selected"), baseline: totals(rows, "baseline"),
     };
   }

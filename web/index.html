@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#18262c">
+  <meta name="theme-color" content="#F6F5F1">
   <title>Retail Forecaster</title>
   <link rel="stylesheet" href="/styles.css">
   <script defer src="/csv.js"></script>
@@ -15,36 +15,18 @@
   <script defer src="/app.js"></script>
 </head>
 <body>
-  <div class="app-shell">
-  <aside class="app-rail">
-    <a class="wordmark" href="#top">
-      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-      <span>Retail<br>Forecaster</span>
-    </a>
+  <header class="topbar">
+    <h1>Retail Forecaster</h1>
     <nav class="desk-nav" aria-label="Workspace">
-      <a href="#reorder-board" aria-current="location"><span class="nav-icon nav-orders" aria-hidden="true"></span>Reorder</a>
-      <a href="#inventory-replay"><span class="nav-icon nav-replay" aria-hidden="true"></span>Replay</a>
-      <a href="#forecast-evidence"><span class="nav-icon nav-forecast" aria-hidden="true"></span>Forecasts</a>
+      <a href="#reorder-board" aria-current="location">Reorder</a>
+      <a href="#inventory-replay">Inventory replay</a>
+      <a href="#forecast-evidence">Forecasts</a>
     </nav>
-    <p class="rail-note">Files stay on this device</p>
-  </aside>
-  <main class="workspace" id="top">
-    <header class="masthead">
-      <div>
-        <h1>Inventory planning</h1>
-        <p>Plan supplier orders from daily sales and opening stock.</p>
-      </div>
-      <a class="replay-link button button-outline" href="#inventory-replay">View inventory replay <span aria-hidden="true">↗</span></a>
-    </header>
-
-    <noscript><p class="notice" data-kind="error">Enable JavaScript to load the sample or analyze your sales history.</p></noscript>
-
     <form class="controls" id="analysis-form" aria-label="Forecast settings">
       <div class="data-controls">
-        <div class="field-heading">Sales history</div>
         <div class="source-actions">
           <label class="button button-outline file-control">
-            <span>Choose CSV</span>
+            <span>Sales CSV</span>
             <input id="history-file" type="file" accept=".csv,text/csv" aria-label="Choose a sales history CSV" aria-describedby="input-help input-status">
           </label>
           <button type="button" class="button button-text" id="demo-button">Synthetic sample</button>
@@ -54,7 +36,7 @@
           <p class="input-status" id="input-status" aria-live="polite">Waiting for sales history</p>
           <details class="input-help" id="input-help">
             <summary>CSV format</summary>
-            <p>Choose a UTF-8 CSV up to 10 MiB with <code>series_id</code>, <code>date</code> and <code>units</code> columns. Use one row per series per day, with dates in <code>YYYY-MM-DD</code> format. Enter <code>0</code> for a day with no sales. Every series needs the same final date.</p>
+            <p>UTF-8, up to 10 MiB. One row per day per series. Fill zero-sales days and use the same end date.</p>
             <pre><code>series_id,date,units
 store-a:item-123,2026-11-01,6
 store-a:item-123,2026-11-02,0</code></pre>
@@ -62,8 +44,8 @@ store-a:item-123,2026-11-02,0</code></pre>
         </div>
       </div>
       <div class="horizon-controls">
-        <label class="field-heading" for="horizon">Forecast horizon</label>
         <div class="horizon-actions">
+          <label for="horizon">Horizon</label>
           <select id="horizon" name="horizon">
             <option value="7">7 days</option>
             <option value="14" selected>14 days</option>
@@ -74,6 +56,10 @@ store-a:item-123,2026-11-02,0</code></pre>
       </div>
       <p id="notice" class="notice" role="status" aria-live="polite" aria-atomic="true"></p>
     </form>
+  </header>
+  <main class="workspace" id="top">
+    <noscript><p class="notice" data-kind="error">JavaScript is required to run the forecast.</p></noscript>
+    <p id="stock-keyboard" class="visually-hidden">Use the arrow keys to inspect a day. Press Escape to clear.</p>
 
     <section class="panel reorder-board" id="reorder-board" aria-labelledby="reorder-heading">
       <div class="reorder-heading">
@@ -95,10 +81,10 @@ store-a:item-123,2026-11-02,0</code></pre>
           <p class="input-status" id="reorder-import-status" role="status">Add inventory to calculate order quantities.</p>
           <details class="input-help" id="reorder-format">
             <summary>Inventory CSV format</summary>
-            <p>Match each <code>series_id</code> to your sales history. Include <code>on_hand</code> and leave it blank when the count is missing.</p>
-            <p><code>lead_days</code>, <code>cover_days</code> and <code>pack_size</code> default to 0, 7 and 1. <code>supplier</code> is optional. If supplied, <code>stock_date</code> must match the first forecast date.</p>
-            <pre><code>series_id,on_hand,lead_days,cover_days,pack_size,supplier,stock_date
-store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
+            <p>Match IDs to sales history. Leave <code>on_hand</code> blank if unknown.</p>
+            <p>Use the first forecast date for <code>stock_date</code>. Optional columns may be blank.</p>
+            <pre><code>series_id,on_hand,lead_days,cover_days,pack_size,supplier,stock_date,safety_stock
+store-a:item-123,40,3,7,12,Main supplier,2026-11-03,10</code></pre>
             <button type="button" class="button button-outline" id="reorder-template" disabled>Download inventory template</button>
           </details>
         </div>
@@ -115,8 +101,12 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
           <dd id="reorder-order-count">—</dd>
         </div>
         <div class="reorder-metric">
-          <dt>Draft order units</dt>
+          <dt>Draft units</dt>
           <dd id="reorder-order-units">—</dd>
+        </div>
+        <div class="reorder-metric">
+          <dt>Stock entered</dt>
+          <dd id="reorder-stock-count">—</dd>
         </div>
       </dl>
 
@@ -134,7 +124,7 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
           </section>
           <div class="reorder-controls">
             <label for="reorder-search">
-              <span class="field-heading">Find an item</span>
+              <span class="field-heading">Find SKU</span>
               <input id="reorder-search" type="search" placeholder="Item or supplier">
             </label>
             <label for="reorder-filter">
@@ -147,7 +137,7 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
               </select>
             </label>
             <label class="reorder-delay-control" for="reorder-delay">
-              <span class="field-heading">Simulate delivery delay</span>
+              <span class="field-heading">Delivery delay</span>
               <select id="reorder-delay">
                 <option value="0">No delay</option>
                 <option value="1">1 day later</option>
@@ -163,7 +153,7 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
           <p id="reorder-scenario-impact" class="reorder-scenario-impact" role="status"></p>
           <div class="table-wrap reorder-table" id="reorder-items" tabindex="0" role="region" aria-label="Reorder recommendations">
             <table>
-              <thead><tr><th scope="col">Item</th><th scope="col">Action</th><th scope="col">Delivery</th><th scope="col">Draft order</th></tr></thead>
+              <thead><tr><th scope="col">Item</th><th scope="col">Action</th><th scope="col">Delivery</th><th scope="col">Order qty</th></tr></thead>
               <tbody id="reorder-rows"><tr><td colspan="4" class="empty-cell">Run a forecast to see your items.</td></tr></tbody>
             </table>
           </div>
@@ -188,58 +178,62 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
             <div class="stock-legend" id="stock-legend" aria-hidden="true">
               <span><i></i>With draft</span>
               <span><i></i>Opening stock only</span>
-              <span><i></i>Short before delivery</span>
+              <span class="legend-risk"><i></i>Shortfall</span>
+              <span class="legend-delay" hidden><i></i>Delay window</span>
+              <span class="legend-band" hidden><i></i>Demand sensitivity</span>
             </div>
             <canvas id="stock-chart" tabindex="0" role="img" aria-label="Projected stock by day" aria-describedby="stock-caption stock-keyboard" aria-keyshortcuts="ArrowLeft ArrowRight Escape"></canvas>
             <figcaption id="stock-caption" class="subtext"></figcaption>
-            <p id="stock-keyboard" class="visually-hidden">Use the arrow keys or select a day to read the forecast and stock balances. Press Escape to clear the selection.</p>
           </figure>
           <div class="reorder-detail" id="reorder-detail" role="status"></div>
           <button type="button" class="button button-text stock-back" id="reorder-back">Back to items</button>
           <details class="stock-settings" id="stock-settings">
-          <summary>Item settings</summary>
-          <form class="reorder-form" id="reorder-form" aria-label="Selected item settings">
-            <div class="reorder-fields">
-              <label for="reorder-on-hand">
-                <span class="field-heading">Units on hand</span>
-                <input id="reorder-on-hand" type="number" min="0" step="1" inputmode="numeric" placeholder="Missing" disabled>
-              </label>
-              <label for="reorder-lead">
-                <span class="field-heading">Lead time (days)</span>
-                <input id="reorder-lead" type="number" min="0" step="1" inputmode="numeric" placeholder="0" required disabled>
-              </label>
-              <label for="reorder-cover">
-                <span class="field-heading">Days of stock after arrival</span>
-                <input id="reorder-cover" type="number" min="1" step="1" inputmode="numeric" placeholder="7" required disabled>
-              </label>
-              <label for="reorder-pack">
-                <span class="field-heading">Units per pack</span>
-                <input id="reorder-pack" type="number" min="1" step="1" inputmode="numeric" placeholder="1" required disabled>
-              </label>
-            </div>
-            <button type="submit" class="button button-outline" id="reorder-save" disabled>Save settings</button>
-          </form>
+            <summary>Item settings</summary>
+            <form class="reorder-form" id="reorder-form" aria-label="Selected item settings">
+              <div class="reorder-fields">
+                <label for="reorder-on-hand">
+                  <span class="field-heading">Units on hand</span>
+                  <input id="reorder-on-hand" type="number" min="0" step="1" inputmode="numeric" placeholder="Missing" disabled>
+                </label>
+                <label for="reorder-lead">
+                  <span class="field-heading">Lead time (days)</span>
+                  <input id="reorder-lead" type="number" min="0" step="1" inputmode="numeric" placeholder="0" required disabled>
+                </label>
+                <label for="reorder-cover">
+                  <span class="field-heading">Coverage (days)</span>
+                  <input id="reorder-cover" type="number" min="1" step="1" inputmode="numeric" placeholder="7" required disabled>
+                </label>
+                <label for="reorder-pack">
+                  <span class="field-heading">Units per pack</span>
+                  <input id="reorder-pack" type="number" min="1" step="1" inputmode="numeric" placeholder="1" required disabled>
+                </label>
+                <label for="reorder-safety">
+                  <span class="field-heading">Safety stock reference</span>
+                  <input id="reorder-safety" type="number" min="0" step="1" inputmode="numeric" placeholder="0" disabled>
+                </label>
+              </div>
+              <button type="submit" class="button button-outline" id="reorder-save" disabled>Save settings</button>
+            </form>
           </details>
           <details class="item-evidence">
             <summary>Forecast assumptions</summary>
-            <p class="subtext reorder-assumptions">The plan assumes delivery is available before sales on its arrival date and no other stock arrives.</p>
+            <p class="subtext">Safety stock and reorder point are chart references. Draft quantities use coverage and pack size.</p>
             <p class="subtext reorder-item-evidence" id="reorder-item-evidence"></p>
           </details>
         </section>
       </div>
     </section>
 
-    <section class="panel replay-panel" id="inventory-replay" aria-labelledby="replay-heading">
+    <section class="panel replay-panel" id="inventory-replay" aria-labelledby="replay-heading" hidden>
       <div class="panel-heading forecast-values-heading">
         <div>
           <h2 id="replay-heading">Inventory replay</h2>
           <p class="subtext" id="replay-period">Comparing order outcomes on held-out sales</p>
-          <p class="subtext" id="replay-simulation">Simulated opening stock and deliveries</p>
+          <p class="subtext" id="replay-simulation">Simulated stock and receipts</p>
         </div>
         <button type="button" class="button button-outline" id="replay-export" disabled>Download replay CSV</button>
       </div>
       <p id="replay-summary" class="replay-summary" role="status" hidden></p>
-      <div class="replay-visuals" id="replay-visuals" hidden></div>
       <fieldset id="replay-controls" class="replay-controls" disabled>
         <legend class="visually-hidden">Replay settings</legend>
         <label for="replay-opening">
@@ -289,6 +283,17 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
         </label>
       </fieldset>
       <p class="subtext replay-policy-note" id="replay-policy-note"></p>
+      <div class="replay-visuals" id="replay-visuals" hidden></div>
+      <figure class="replay-stock stock-figure" id="replay-stock" hidden>
+        <h3>Simulated stock by day</h3>
+        <div class="stock-legend" aria-hidden="true">
+          <span><i></i>Selected plan</span>
+          <span><i></i>Weekly baseline</span>
+          <span class="legend-risk"><i></i>Any SKU short</span>
+        </div>
+        <canvas id="replay-chart" role="img" aria-label="Replayed stock for both plans" aria-describedby="replay-caption stock-keyboard" aria-keyshortcuts="ArrowLeft ArrowRight Escape"></canvas>
+        <figcaption id="replay-caption" class="subtext"></figcaption>
+      </figure>
       <div class="table-wrap replay-table" tabindex="0" role="region" aria-labelledby="replay-heading">
         <table>
           <thead>
@@ -300,14 +305,9 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
       <div class="replay-foot">
         <p id="replay-status" class="subtext" role="status"></p>
         <p id="replay-credit" class="subtext" hidden>Aggregated sales from <a href="https://doi.org/10.24432/C5BW33">Daqing Chen’s UCI Online Retail dataset</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Stock and orders are simulated.</p>
-        <details class="input-help">
-          <summary>Replay assumptions</summary>
-          <p>Both forecasts use earlier sales. Opening stock uses the preceding 28-day average. Each method gets one delivery before sales on its arrival day. The simulation uses recorded sales as demand and treats any shortage as a missed sale.</p>
-          <p>The shared limit is the smaller unrestricted order. Each method allocates its next pack where it expects the pack to cover the most sales. Earlier projected shortages break ties.</p>
-        </details>
       </div>
       <details class="replay-impact" id="replay-impact" hidden>
-        <summary>See which items drove the result</summary>
+        <summary>SKU impact</summary>
         <p class="subtext" id="replay-impact-note"></p>
         <div class="table-wrap replay-table" tabindex="0" role="region" aria-label="Largest simulated changes by item">
           <table>
@@ -320,104 +320,105 @@ store-a:item-123,40,3,7,12,Main supplier,2026-11-03</code></pre>
       </details>
     </section>
 
-    <div class="overview" id="forecast-evidence">
-      <section class="panel forecast-panel" aria-labelledby="chart-heading">
-        <div class="panel-heading forecast-heading">
-          <div>
-            <h2 id="chart-heading">Daily sales forecast</h2>
-            <p id="source-name" class="subtext">Waiting for sales history</p>
-          </div>
-          <div class="series-picker">
-            <label class="field-heading" for="series-select">Series</label>
-            <select id="series-select" disabled><option value="">Choose a series</option></select>
-          </div>
-        </div>
-        <div class="chart-key" aria-hidden="true">
-          <span><i class="legend-line legend-history"></i>Observed sales</span>
-          <span><i class="legend-line legend-forecast"></i>Forecast</span>
-        </div>
-        <div class="plot">
-          <canvas id="forecast-chart" tabindex="0" role="img" aria-labelledby="chart-heading" aria-describedby="chart-details chart-keyboard" aria-keyshortcuts="ArrowLeft ArrowRight Escape"></canvas>
-          <p id="chart-keyboard" class="visually-hidden">Use the left and right arrow keys to inspect a day. Press Escape to clear the selection.</p>
-        </div>
-        <p class="chart-details subtext" id="chart-details">Load a sales history to view daily observations and forecast values.</p>
-      </section>
-
-      <section class="panel score-panel" aria-labelledby="holdout-heading">
-        <div class="panel-heading">
-          <h2 id="holdout-heading">Holdout performance</h2>
-          <p class="subtext">Weighted absolute percentage error on a reserved period</p>
-        </div>
-        <div class="score-body">
-          <div class="metric-feature">
-            <p class="metric-label">Selected model WAPE</p>
-            <p class="metric-value" id="metric-selected">—</p>
-            <p class="subtext" id="model-name">Model pending</p>
-          </div>
-          <dl class="score-comparison">
+    <div id="forecast-evidence" hidden>
+      <div class="overview">
+        <section class="panel forecast-panel" aria-labelledby="chart-heading">
+          <div class="panel-heading forecast-heading">
             <div>
-              <dt>Baseline WAPE</dt>
-              <dd id="metric-baseline">—</dd>
+              <h2 id="chart-heading">Daily sales forecast</h2>
+              <p id="source-name" class="subtext">Waiting for sales history</p>
             </div>
+            <div class="series-picker">
+              <label class="field-heading" for="series-select">Series</label>
+              <select id="series-select" disabled><option value="">Choose a series</option></select>
+            </div>
+          </div>
+          <div class="chart-key" aria-hidden="true">
+            <span><i class="legend-line legend-history"></i>Observed sales</span>
+            <span><i class="legend-line legend-forecast"></i>Forecast</span>
+          </div>
+          <div class="plot">
+            <canvas id="forecast-chart" tabindex="0" role="img" aria-labelledby="chart-heading" aria-describedby="chart-details chart-keyboard" aria-keyshortcuts="ArrowLeft ArrowRight Escape"></canvas>
+            <p id="chart-keyboard" class="visually-hidden">Use the left and right arrow keys to inspect a day. Press Escape to clear the selection.</p>
+          </div>
+          <p class="chart-details subtext" id="chart-details">Load a sales history to view daily observations and forecast values.</p>
+        </section>
+
+        <section class="panel score-panel" aria-labelledby="holdout-heading">
+          <div class="panel-heading">
+            <h2 id="holdout-heading">Holdout performance</h2>
+            <p class="subtext">Weighted absolute percentage error on a reserved period</p>
+          </div>
+          <div class="score-body">
+            <div class="metric-feature">
+              <p class="metric-label">Selected model WAPE</p>
+              <p class="metric-value" id="metric-selected">—</p>
+              <p class="subtext" id="model-name">Model pending</p>
+            </div>
+            <dl class="score-comparison">
+              <div>
+                <dt>Baseline WAPE</dt>
+                <dd id="metric-baseline">—</dd>
+              </div>
+              <div>
+                <dt>Gap vs. baseline</dt>
+                <dd id="metric-delta">—</dd>
+              </div>
+            </dl>
+            <p class="holdout-details subtext" id="holdout-details">WAPE is absolute forecast error divided by actual sales. Lower is better.</p>
+          </div>
+        </section>
+      </div>
+
+      <div class="details-grid forecast-values-grid">
+        <section class="panel" aria-labelledby="detail-heading">
+          <div class="panel-heading forecast-values-heading">
             <div>
-              <dt>Gap vs. baseline</dt>
-              <dd id="metric-delta">—</dd>
+              <h2 id="detail-heading">Forecast values</h2>
+              <p class="subtext" id="forecast-total">Daily estimates for the selected series</p>
             </div>
-          </dl>
-          <p class="holdout-details subtext" id="holdout-details">WAPE is absolute forecast error divided by actual sales. Lower is better.</p>
-        </div>
-      </section>
-    </div>
-
-    <div class="details-grid forecast-values-grid">
-      <section class="panel" aria-labelledby="detail-heading">
-        <div class="panel-heading forecast-values-heading">
-          <div>
-            <h2 id="detail-heading">Forecast values</h2>
-            <p class="subtext" id="forecast-total">Daily estimates for the selected series</p>
+            <div class="export-control">
+              <button type="button" class="button button-outline" id="export-button" aria-describedby="export-scope" disabled>Download forecast CSV</button>
+              <p class="subtext" id="export-scope">Includes all series</p>
+            </div>
           </div>
-          <div class="export-control">
-            <button type="button" class="button button-outline" id="export-button" aria-describedby="export-scope" disabled>Download forecast CSV <span aria-hidden="true">↓</span></button>
-            <p class="subtext" id="export-scope">Includes all series</p>
+          <div class="table-wrap forecast-table" tabindex="0" role="region" aria-labelledby="detail-heading">
+            <table>
+              <thead><tr><th scope="col">Date</th><th scope="col">Forecast units</th></tr></thead>
+              <tbody id="forecast-rows"><tr><td colspan="2" class="empty-cell">Daily estimates will appear here after a forecast run.</td></tr></tbody>
+            </table>
           </div>
-        </div>
-        <div class="table-wrap forecast-table" tabindex="0" role="region" aria-labelledby="detail-heading">
-          <table>
-            <thead><tr><th scope="col">Date</th><th scope="col">Forecast units</th></tr></thead>
-            <tbody id="forecast-rows"><tr><td colspan="2" class="empty-cell">Daily estimates will appear here after a forecast run.</td></tr></tbody>
-          </table>
-        </div>
-      </section>
-    </div>
+        </section>
+      </div>
 
-    <div class="details-grid diagnostic-grid">
-      <section class="panel" aria-labelledby="models-heading">
-        <div class="panel-heading">
-          <h2 id="models-heading">Model comparison</h2>
-          <p class="subtext">Earlier windows used to choose a model</p>
-        </div>
-        <div class="table-wrap" tabindex="0" role="region" aria-labelledby="models-heading">
-          <table>
-            <thead><tr><th scope="col">Model</th><th scope="col">Validation WAPE</th><th scope="col">Validation MAE</th></tr></thead>
-            <tbody id="model-rows"><tr><td colspan="3" class="empty-cell">Model scores will appear here after a forecast run.</td></tr></tbody>
-          </table>
-        </div>
-      </section>
+      <div class="details-grid diagnostic-grid">
+        <section class="panel" aria-labelledby="models-heading">
+          <div class="panel-heading">
+            <h2 id="models-heading">Model comparison</h2>
+            <p class="subtext">Earlier windows used to choose a model</p>
+          </div>
+          <div class="table-wrap" tabindex="0" role="region" aria-labelledby="models-heading">
+            <table>
+              <thead><tr><th scope="col">Model</th><th scope="col">Validation WAPE</th><th scope="col">Validation MAE</th></tr></thead>
+              <tbody id="model-rows"><tr><td colspan="3" class="empty-cell">Model scores will appear here after a forecast run.</td></tr></tbody>
+            </table>
+          </div>
+        </section>
 
-      <section class="panel slice-panel" aria-labelledby="slice-heading">
-        <div class="panel-heading">
-          <h2 id="slice-heading">Holdout by sales pattern</h2>
-          <p class="subtext">MAE is the average error in units per day. Negative bias means the forecast was lower than observed sales. Sparse series recorded sales on fewer than half of recent days.</p>
-        </div>
-        <div class="table-wrap" tabindex="0" role="region" aria-labelledby="slice-heading">
-          <table>
-            <thead><tr><th scope="col">Segment</th><th scope="col">Series</th><th scope="col">Selected MAE</th><th scope="col">Baseline MAE</th><th scope="col" aria-label="Selected model unit bias">Unit bias</th></tr></thead>
-            <tbody id="slice-rows"><tr><td colspan="5" class="empty-cell">Segment scores will appear here after a forecast run.</td></tr></tbody>
-          </table>
-        </div>
-      </section>
+        <section class="panel slice-panel" aria-labelledby="slice-heading">
+          <div class="panel-heading">
+            <h2 id="slice-heading">Holdout by sales pattern</h2>
+            <p class="subtext">MAE in units/day. Bias is forecast minus sales, as a share of sales.</p>
+          </div>
+          <div class="table-wrap" tabindex="0" role="region" aria-labelledby="slice-heading">
+            <table>
+              <thead><tr><th scope="col">Segment</th><th scope="col">Series</th><th scope="col">Selected MAE</th><th scope="col">Baseline MAE</th><th scope="col" aria-label="Selected model unit bias">Unit bias</th></tr></thead>
+              <tbody id="slice-rows"><tr><td colspan="5" class="empty-cell">Segment scores will appear here after a forecast run.</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </div>
   </main>
-  </div>
 </body>
 </html>

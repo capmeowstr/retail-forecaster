@@ -6,8 +6,10 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
-const sources = ["csv.js", "reorder.js"].map(name => fs.readFileSync(path.join(__dirname, "..", "web", name), "utf8"));
-const { parseInventory, sampleInventory, buildPlan } = vm.runInNewContext([...sources, "retailReorder"].join("\n"));
+const sources = ["csv.js", "reorder.js", "stock-chart.js"].map(name =>
+  fs.readFileSync(path.join(__dirname, "..", "web", name), "utf8"));
+const { parseInventory, sampleInventory, buildPlan, projectStock, stockReferences } =
+  vm.runInNewContext([...sources, "({ ...retailReorder, projectStock, stockReferences })"].join("\n"));
 const dates = Array.from({ length: 14 }, (_, index) => new Date(Date.UTC(2026, 9, 19 + index)).toISOString().slice(0, 10));
 const unitForecast = [3, 4, 6, 4];
 const stock = (onHand, leadDays = 2, coverDays = 2, packSize = 5) => ({
@@ -24,11 +26,23 @@ test("inventory accepts quoted fields, optional defaults, and explicit zero stoc
     ",__proto__,,,,,\r\n";
   const inventory = parseInventory(csv, dates[0]);
   assert.deepEqual({ ...inventory.get("Item, A") }, {
-    onHand: 0, leadDays: 2, coverDays: 5, packSize: 12, supplier: 'Harbour, "East"',
+    onHand: 0, leadDays: 2, coverDays: 5, packSize: 12, safetyStock: 0, supplier: 'Harbour, "East"',
   });
   assert.deepEqual({ ...inventory.get("__proto__") }, {
-    onHand: null, leadDays: 0, coverDays: 7, packSize: 1, supplier: "",
+    onHand: null, leadDays: 0, coverDays: 7, packSize: 1, safetyStock: 0, supplier: "",
   });
+});
+
+test("stock references use the lead forecast and keep draft orders unchanged", () => {
+  const imported = parseInventory("series_id,on_hand,lead_days,cover_days,pack_size,safety_stock\nitem,5,2,2,5,4", dates[0]);
+  const plan = itemPlan(imported.get("item"));
+  assert.equal(plan.orderUnits, itemPlan(stock(5)).orderUnits);
+  assert.deepEqual(Array.from(stockReferences(plan), ({ value }) => value), [4, 11]);
+  const days = projectStock(5, unitForecast, 2, plan.orderUnits);
+  assert.deepEqual(Array.from(days, ({ balance }) => balance), [2, 0, 4, 0]);
+  assert.equal(days[1].missed, 2);
+  assert.equal(days[2].receipt, 10);
+  assert.ok(projectStock(5, unitForecast, 2, 10, -3)[2].balance > days[2].balance);
 });
 
 test("inventory errors identify invalid rows, duplicate IDs, and stale snapshots", () => {
